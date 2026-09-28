@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+const sequelize = require("./config/db");
+
 const app = express();
 
 app.use(
@@ -20,8 +22,21 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-const server = app.listen(PORT, () => {
-  console.log(`Server started ${PORT}`);
-});
+async function startServer() {
+  try {
+    await sequelize.authenticate();
 
+    console.log("✅ PostgreSQL connected successfully");
 
+    app.listen(PORT, () => {
+      console.log(`🚀 Server started on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("❌ Database connection failed:");
+    console.error(error.message);
+
+    process.exit(1);
+  }
+}
+
+startServer();
