@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
+const companyRoutes = require("./routes/companyRoutes");
 
 const sequelize = require("./config/db");
 
@@ -19,6 +20,8 @@ app.get("/", (req, res) => {
     message: "Server started running......",
   });
 });
+
+app.use("/api/companies", companyRoutes);
 
 const PORT = process.env.PORT || 3000;
 

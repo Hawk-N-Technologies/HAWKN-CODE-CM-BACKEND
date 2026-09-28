@@ -6,6 +6,11 @@ CREATE TABLE companies (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+
+INSERT INTO companies (name)
+VALUES ('Hawk''n Technologies');
+
+
 CREATE TABLE company_profiles (
     id SERIAL PRIMARY KEY,
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
