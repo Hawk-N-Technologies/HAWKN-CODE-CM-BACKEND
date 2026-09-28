@@ -1,4 +1,4 @@
-const { Company } = require("../models");
+const Company = require("../models/Company");
 const logger = require("../utils/logger");
 
 async function getAllCompanies() {
