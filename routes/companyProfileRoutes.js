@@ -1,0 +1,12 @@
+const express = require("express");
+
+// const authenticate = require("../middleware/authenticate");
+const companyProfileController = require("../controllers/companyProfileController");
+
+const router = express.Router();
+
+router.get("/profile", companyProfileController.getCompanyProfile);
+
+router.put("/profile", companyProfileController.updateCompanyProfile);
+
+module.exports = router;

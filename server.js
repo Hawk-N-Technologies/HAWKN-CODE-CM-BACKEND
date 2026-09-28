@@ -1,9 +1,17 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const companyRoutes = require("./routes/companyRoutes");
-
 const sequelize = require("./config/db");
+const companyRoutes = require("./routes/companyRoutes");
+const errorHandler = require("./middleware/errorHandler");
+
+const companyProfileRoutes = require("./routes/companyProfileRoutes");
+
+const companyPolicyRoutes = require("./routes/companyPolicyRoutes");
+
+const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesResponsibilitiesRoutes");
+
+const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
 
 const app = express();
 
@@ -22,7 +30,11 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/companies", companyRoutes);
-
+app.use("/api/company", companyProfileRoutes);
+app.use("/api/company", companyPolicyRoutes);
+app.use("/api/company", companyRolesResponsibilitiesRoutes);
+app.use("/api/company", employeeHierarchyRoutes);
+app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
