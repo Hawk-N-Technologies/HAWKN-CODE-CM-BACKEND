@@ -12,7 +12,7 @@ router.get(
 );
 
 router.put(
-  "/policies",
+  "/policies/:uuid",
   authenticate(["admin"]),
   companyPolicyController.updateCompanyPolicies,
 );

@@ -34,17 +34,19 @@ async function getRolesResponsibilities(req, res, next) {
 
 async function updateRolesResponsibilities(req, res, next) {
   try {
-    const companyId = req.user.companyId;
+    const { uuid } = req.params;
     const { content } = req.body;
+    console.log(content);
 
-    logger.info("Update roles and responsibilities request received", {
-      userId: req.user.id,
-      companyId,
-    });
+    
+    // logger.info("Update roles and responsibilities request received", {
+    //   userId: req.user.id,
+    //   uuid,
+    // });
 
     const data =
       await companyRolesResponsibilitiesService.updateRolesResponsibilities(
-        companyId,
+        uuid,
         content,
       );
 

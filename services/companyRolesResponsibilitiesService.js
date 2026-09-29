@@ -10,7 +10,7 @@ async function getRolesResponsibilities(companyId) {
       throw error;
     }
 
-    const rolesResponsibilities = await CompanyRolesResponsibilities.findOne({
+    let rolesResponsibilities = await CompanyRolesResponsibilities.findOne({
       where: {
         companyId: companyId,
       },
@@ -18,10 +18,10 @@ async function getRolesResponsibilities(companyId) {
     });
 
     if (!rolesResponsibilities) {
-      const error = new Error("Roles and responsibilities not found");
-
-      error.statusCode = 404;
-      throw error;
+      rolesResponsibilities = CompanyRolesResponsibilities.create({
+        companyId: companyId,
+        content: "",
+      });
     }
 
     logger.info("Roles and responsibilities fetched successfully", {
@@ -41,10 +41,10 @@ async function getRolesResponsibilities(companyId) {
   }
 }
 
-async function updateRolesResponsibilities(companyId, content) {
+async function updateRolesResponsibilities(uuid, content) {
   try {
-    if (!companyId) {
-      const error = new Error("Company ID is required");
+    if (!uuid) {
+      const error = new Error("uuid is required");
       error.statusCode = 400;
       throw error;
     }
@@ -57,7 +57,7 @@ async function updateRolesResponsibilities(companyId, content) {
 
     const rolesResponsibilities = await CompanyRolesResponsibilities.findOne({
       where: {
-        companyId: companyId,
+        uuid: uuid,
       },
     });
 
@@ -73,7 +73,6 @@ async function updateRolesResponsibilities(companyId, content) {
     });
 
     logger.info("Roles and responsibilities updated successfully", {
-      companyId: companyId,
       contentUuid: rolesResponsibilities.uuid,
     });
 
@@ -85,7 +84,6 @@ async function updateRolesResponsibilities(companyId, content) {
     };
   } catch (error) {
     logger.error("Failed to update roles and responsibilities", {
-      companyId: companyId,
       error: error.message,
       stack: error.stack,
     });
