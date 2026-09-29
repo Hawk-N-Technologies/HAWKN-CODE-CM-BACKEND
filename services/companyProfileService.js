@@ -47,12 +47,11 @@ async function getCompanyProfile(companyId) {
     throw error;
   }
 }
-async function updateCompanyProfile(companyId, data) {
-  try {
-    console.log(companyId);
 
-    if (!companyId) {
-      const error = new Error("Company ID is required");
+async function updateCompanyProfile(uuid, data) {
+  try {
+    if (!uuid) {
+      const error = new Error("Profile UUID is required");
       error.statusCode = 400;
       throw error;
     }
@@ -63,11 +62,17 @@ async function updateCompanyProfile(companyId, data) {
       throw error;
     }
 
-    let profile = await CompanyProfile.findOne({
+    const profile = await CompanyProfile.findOne({
       where: {
-        companyId: companyId,
+        uuid: uuid,
       },
     });
+
+    if (!profile) {
+      const error = new Error("Company profile not found");
+      error.statusCode = 404;
+      throw error;
+    }
 
     const allowedFields = {
       officialCompanyName: data.officialCompanyName,
@@ -77,37 +82,13 @@ async function updateCompanyProfile(companyId, data) {
       blogContent: data.blogContent,
     };
 
-    // Create profile if it doesn't exist
-    if (!profile) {
-      profile = await CompanyProfile.create({
-        companyId: companyId,
-        ...allowedFields,
-      });
+    console.log(allowedFields.blogContent);
 
-      logger.info("Company profile created successfully", {
-        companyId: companyId,
-        profileUuid: profile.uuid,
-      });
-
-      return {
-        uuid: profile.uuid,
-        officialCompanyName: profile.officialCompanyName,
-        officialEmail: profile.officialEmail,
-        vision: profile.vision,
-        mission: profile.mission,
-        blogContent: profile.blogContent,
-        createdAt: profile.createdAt,
-        updatedAt: profile.updatedAt,
-      };
-    }
-
-    // Update existing profile
     await profile.update(allowedFields);
 
-    logger.info("Company profile updated successfully", {
-      companyId: companyId,
-      profileUuid: profile.uuid,
-    });
+    // logger.info("Company profile updated successfully", {
+    //   profileUuid: profile.uuid,
+    // });
 
     return {
       uuid: profile.uuid,
@@ -121,7 +102,7 @@ async function updateCompanyProfile(companyId, data) {
     };
   } catch (error) {
     logger.error("Failed to update company profile", {
-      companyId: companyId,
+      profileUuid: uuid,
       error: error.message,
       stack: error.stack,
     });
@@ -129,6 +110,7 @@ async function updateCompanyProfile(companyId, data) {
     throw error;
   }
 }
+
 module.exports = {
   getCompanyProfile,
   updateCompanyProfile,

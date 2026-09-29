@@ -29,14 +29,14 @@ async function getCompanyProfile(req, res, next) {
 
 async function updateCompanyProfile(req, res, next) {
   try {
-    const companyId = 1;
+    const { uuid } = req.params;
 
-    logger.info("Update company profile request received", {
-      companyId,
-    });
-
+    // logger.info("Update company profile request received", {
+    //   profileUuid: uuid,
+    // });
+``
     const profile = await companyProfileService.updateCompanyProfile(
-      companyId,
+      uuid,
       req.body,
     );
 
@@ -47,6 +47,7 @@ async function updateCompanyProfile(req, res, next) {
     });
   } catch (error) {
     logger.error("Update company profile controller failed", {
+      profileUuid: req.params.uuid,
       error: error.message,
       stack: error.stack,
     });
