@@ -6,13 +6,11 @@ const companyRoutes = require("./routes/companyRoutes");
 const errorHandler = require("./middleware/errorHandler");
 
 const companyProfileRoutes = require("./routes/companyProfileRoutes");
-
 const companyPolicyRoutes = require("./routes/companyPolicyRoutes");
-
 const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesResponsibilitiesRoutes");
-
 const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
-
+const authRoutes = require("./routes/authRoutes");
+require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
 const seed = require("./seeders/userSeeder");
 const app = express();
@@ -37,6 +35,8 @@ app.use("/api/company", companyProfileRoutes);
 app.use("/api/company", companyPolicyRoutes);
 app.use("/api/company", companyRolesResponsibilitiesRoutes);
 app.use("/api/company", employeeHierarchyRoutes);
+app.use("/api/auth", authRoutes);
+
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 
@@ -58,4 +58,4 @@ async function startServer() {
 }
 
 startServer();
-seed();
+// seed();

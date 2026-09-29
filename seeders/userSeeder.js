@@ -6,16 +6,29 @@ const logger = require("../utils/logger");
 
 async function seedUsers() {
   try {
-    const company = await Company.findOne({
+    // Find company or create it if it doesn't exist
+    const [company, created] = await Company.findOrCreate({
       where: {
+        name: "Hawk'N Technologies",
+      },
+      defaults: {
         name: "Hawk'N Technologies",
       },
     });
 
-    if (!company) {
-      throw new Error("Hawk'N Technologies company not found");
+    if (created) {
+      logger.info("Company created successfully", {
+        companyId: company.id,
+        name: company.name,
+      });
+    } else {
+      logger.info("Company already exists", {
+        companyId: company.id,
+        name: company.name,
+      });
     }
 
+    // Get required roles
     const roles = await Role.findAll({
       where: {
         name: ["admin", "hr", "bde", "client", "tester", "developer"],
@@ -24,7 +37,7 @@ async function seedUsers() {
 
     const roleMap = {};
 
-    roles.forEach(function (role) {
+    roles.forEach((role) => {
       roleMap[role.name] = role.id;
     });
 
@@ -98,11 +111,11 @@ async function seedUsers() {
 
       await User.create({
         companyId: company.id,
-        roleId: roleId,
+        roleId,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        passwordHash: passwordHash,
+        passwordHash,
         isActive: true,
       });
 
