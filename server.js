@@ -59,4 +59,4 @@ async function startServer() {
 }
 
 startServer();
-// seed();
+seed();

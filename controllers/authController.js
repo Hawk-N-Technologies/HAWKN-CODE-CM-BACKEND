@@ -53,7 +53,31 @@ async function logout(req, res, next) {
   }
 }
 
+async function getMe(req, res, next) {
+  try {
+    const userId = req.user.userId;
+
+    const user = await authService.getMe(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Authenticated user fetched successfully",
+      data: {
+        user,
+      },
+    });
+  } catch (error) {
+    logger.error("Get authenticated user controller failed", {
+      userId: req.user?.userId,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    return next(error);
+  }
+}
 module.exports = {
   login,
   logout,
+  getMe,
 };

@@ -11,6 +11,10 @@ router.get(
   companyProfileController.getCompanyProfile,
 );
 
-router.put("/profile/:uuid", companyProfileController.updateCompanyProfile);
+router.put(
+  "/profile/:uuid",
+  authenticate(["admin"]),
+  companyProfileController.updateCompanyProfile,
+);
 
 module.exports = router;
