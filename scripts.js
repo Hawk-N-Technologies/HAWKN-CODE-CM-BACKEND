@@ -67,11 +67,4 @@ if (command === "migrate") {
   migrate();
 } else if (command === "seed") {
   seed();
-} else {
-  console.log(`
-Usage:
-
-  npm run migrate
-  npm run seed
-`);
-}
+} 
