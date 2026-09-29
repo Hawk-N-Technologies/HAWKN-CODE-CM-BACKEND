@@ -12,9 +12,7 @@ const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
 const authRoutes = require("./routes/authRoutes");
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
-const seed = require("./seeders/userSeeder");
 const app = express();
-
 app.use(
   cors({
     origin: "http://localhost:5173",
@@ -59,4 +57,4 @@ async function startServer() {
 }
 
 startServer();
-seed();
+
