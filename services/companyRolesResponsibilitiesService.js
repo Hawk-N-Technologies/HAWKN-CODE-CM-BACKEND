@@ -23,7 +23,7 @@ async function getRolesResponsibilities(companyId) {
       throw error;
     }
 
-    const rolesResponsibilities = await CompanyRolesResponsibilities.findOne({
+    let rolesResponsibilities = await CompanyRolesResponsibilities.findOne({
       where: {
         companyId: companyId,
       },
@@ -32,11 +32,10 @@ async function getRolesResponsibilities(companyId) {
 
     // Nothing saved yet is NOT an error — the page just shows an empty editor
     if (!rolesResponsibilities) {
-      logger.info("No roles and responsibilities saved yet", {
+      rolesResponsibilities = CompanyRolesResponsibilities.create({
         companyId: companyId,
+        content: "",
       });
-
-      return toResponse(null);
     }
 
     logger.info("Roles and responsibilities fetched successfully", {
@@ -56,10 +55,10 @@ async function getRolesResponsibilities(companyId) {
   }
 }
 
-async function updateRolesResponsibilities(companyId, content) {
+async function updateRolesResponsibilities(uuid, content) {
   try {
-    if (!companyId) {
-      const error = new Error("Company ID is required");
+    if (!uuid) {
+      const error = new Error("uuid is required");
       error.statusCode = 400;
       throw error;
     }
@@ -78,7 +77,7 @@ async function updateRolesResponsibilities(companyId, content) {
 
     let rolesResponsibilities = await CompanyRolesResponsibilities.findOne({
       where: {
-        companyId: companyId,
+        uuid: uuid,
       },
     });
 
@@ -103,14 +102,12 @@ async function updateRolesResponsibilities(companyId, content) {
     });
 
     logger.info("Roles and responsibilities updated successfully", {
-      companyId: companyId,
       contentUuid: rolesResponsibilities.uuid,
     });
 
     return toResponse(rolesResponsibilities);
   } catch (error) {
     logger.error("Failed to update roles and responsibilities", {
-      companyId: companyId,
       error: error.message,
       stack: error.stack,
     });

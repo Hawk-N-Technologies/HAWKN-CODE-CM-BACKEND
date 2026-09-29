@@ -3,7 +3,8 @@ const logger = require("../utils/logger");
 
 async function getCompanyProfile(req, res, next) {
   try {
-    const companyId = 1;
+    const companyId = req.user.companyId;
+    console.log(req.user);
 
     logger.info("Get company profile request received", {
       companyId,
@@ -34,7 +35,6 @@ async function updateCompanyProfile(req, res, next) {
     // logger.info("Update company profile request received", {
     //   profileUuid: uuid,
     // });
-``
     const profile = await companyProfileService.updateCompanyProfile(
       uuid,
       req.body,

@@ -30,16 +30,17 @@ async function getCompanyPolicies(req, res, next) {
 
 async function updateCompanyPolicies(req, res, next) {
   try {
-    const companyId = req.user.companyId;
+    const { uuid } = req.params;
+
     const { content } = req.body;
 
     logger.info("Update company policies request received", {
       userId: req.user.id,
-      companyId,
+      uuid,
     });
 
     const policies = await companyPolicyService.updateCompanyPolicies(
-      companyId,
+      uuid,
       content,
     );
 
@@ -63,4 +64,3 @@ module.exports = {
   getCompanyPolicies,
   updateCompanyPolicies,
 };
- 

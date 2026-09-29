@@ -9,7 +9,7 @@ async function getCompanyPolicies(companyId) {
       throw error;
     }
 
-    const policies = await CompanyPolicy.findOne({
+    let policies = await CompanyPolicy.findOne({
       where: {
         companyId: companyId,
       },
@@ -17,9 +17,10 @@ async function getCompanyPolicies(companyId) {
     });
 
     if (!policies) {
-      const error = new Error("Company policies not found");
-      error.statusCode = 404;
-      throw error;
+      policies = await CompanyPolicy.create({
+        companyId,
+        content: "",
+      });
     }
 
     logger.info("Company policies fetched successfully", {
@@ -39,10 +40,10 @@ async function getCompanyPolicies(companyId) {
   }
 }
 
-async function updateCompanyPolicies(companyId, content) {
+async function updateCompanyPolicies(uuid, content) {
   try {
-    if (!companyId) {
-      const error = new Error("Company ID is required");
+    if (!uuid) {
+      const error = new Error("uuid is required");
       error.statusCode = 400;
       throw error;
     }
@@ -55,7 +56,7 @@ async function updateCompanyPolicies(companyId, content) {
 
     const policies = await CompanyPolicy.findOne({
       where: {
-        companyId: companyId,
+        uuid: uuid,
       },
     });
 
@@ -70,7 +71,6 @@ async function updateCompanyPolicies(companyId, content) {
     });
 
     logger.info("Company policies updated successfully", {
-      companyId: companyId,
       policyUuid: policies.uuid,
     });
 

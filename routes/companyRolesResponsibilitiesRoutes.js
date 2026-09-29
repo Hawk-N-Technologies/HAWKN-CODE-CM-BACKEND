@@ -13,7 +13,7 @@ router.get(
 );
 
 router.put(
-  "/roles-responsibilities",
+  "/roles-responsibilities/:uuid",
   authenticate(["admin"]),
   companyRolesResponsibilitiesController.updateRolesResponsibilities,
 );
