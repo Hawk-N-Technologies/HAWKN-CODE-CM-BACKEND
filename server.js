@@ -13,8 +13,8 @@ const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesRespons
 
 const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
 
-const tempCompanyContext = require("./middlewares/tempCompanyContext");
-
+// const tempCompanyContext = require("./middlewares/tempCompanyContext");
+const seed = require("./seeders/userSeeder");
 const app = express();
 
 app.use(
@@ -24,7 +24,7 @@ app.use(
 );
 
 app.use(express.json());
-app.use(tempCompanyContext); 
+// app.use(tempCompanyContext);
 
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -58,3 +58,4 @@ async function startServer() {
 }
 
 startServer();
+seed();

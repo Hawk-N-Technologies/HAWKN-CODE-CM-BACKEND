@@ -23,6 +23,7 @@
   "dependencies": {
     "@sequelize/core": "^7.0.0-alpha.48",
     "@sequelize/postgres": "^7.0.0-alpha.48",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.4",
     "expres": "^0.0.5",

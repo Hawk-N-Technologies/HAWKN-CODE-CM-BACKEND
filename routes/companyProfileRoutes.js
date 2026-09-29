@@ -7,6 +7,6 @@ const router = express.Router();
 
 router.get("/profile", companyProfileController.getCompanyProfile);
 
-router.put("/profile", companyProfileController.updateCompanyProfile);
+router.put("/profile/:uuid", companyProfileController.updateCompanyProfile);
 
 module.exports = router;
