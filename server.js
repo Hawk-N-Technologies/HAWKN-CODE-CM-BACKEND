@@ -13,6 +13,8 @@ const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesRespons
 
 const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
 
+const tempCompanyContext = require("./middlewares/tempCompanyContext");
+
 const app = express();
 
 app.use(
@@ -22,6 +24,7 @@ app.use(
 );
 
 app.use(express.json());
+app.use(tempCompanyContext); 
 
 app.get("/", (req, res) => {
   res.status(200).json({
