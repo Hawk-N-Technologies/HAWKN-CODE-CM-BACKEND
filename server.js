@@ -4,7 +4,7 @@ require("dotenv").config();
 const sequelize = require("./config/db");
 const companyRoutes = require("./routes/companyRoutes");
 const errorHandler = require("./middleware/errorHandler");
-
+const cookieParser = require("cookie-parser");
 const companyProfileRoutes = require("./routes/companyProfileRoutes");
 const companyPolicyRoutes = require("./routes/companyPolicyRoutes");
 const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesResponsibilitiesRoutes");
@@ -22,6 +22,7 @@ app.use(
 );
 
 app.use(express.json());
+app.use(cookieParser());
 // app.use(tempCompanyContext);
 
 app.get("/", (req, res) => {
