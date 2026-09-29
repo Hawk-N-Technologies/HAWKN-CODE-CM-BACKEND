@@ -13,7 +13,7 @@ const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesRespons
 
 const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
 
-const tempCompanyContext = require("./middlewares/tempCompanyContext");
+const tempCompanyContext = require("./middleware/tempCompanyContext");
 
 const app = express();
 

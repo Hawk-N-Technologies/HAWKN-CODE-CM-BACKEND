@@ -35,7 +35,7 @@ async function getRolesResponsibilities(req, res, next) {
 async function updateRolesResponsibilities(req, res, next) {
   try {
     const companyId = req.user.companyId;
-    const { content } = req.body;
+    const { content } = req.body || {}; // Express 5: req.body is undefined when no JSON is sent
 
     logger.info("Update roles and responsibilities request received", {
       userId: req.user.id,
