@@ -230,3 +230,61 @@ CREATE TABLE attendances (
     CONSTRAINT uq_employee_attendance_session
         UNIQUE (employee_id, attendance_date, session)
 );
+
+
+
+CREATE TABLE payrolls (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    company_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    pay_period DATE NOT NULL,
+    base_salary NUMERIC(12,2) NOT NULL,
+    lop_deduction NUMERIC(12,2) NOT NULL DEFAULT 0,
+    bonus NUMERIC(12,2) NOT NULL DEFAULT 0,
+    net_salary NUMERIC(12,2) NOT NULL,
+    payment_method VARCHAR(30) NOT NULL DEFAULT 'Bank Transfer',
+    status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+    processed_at TIMESTAMP WITH TIME ZONE,
+    created_by INTEGER,
+    processed_by INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_payrolls_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_payrolls_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_payrolls_created_by
+        FOREIGN KEY (created_by)
+        REFERENCES users(id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_payrolls_processed_by
+        FOREIGN KEY (processed_by)
+        REFERENCES users(id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    CONSTRAINT uq_payrolls_company_user_period
+        UNIQUE (company_id, user_id, pay_period),
+    CONSTRAINT chk_payrolls_period_first_of_month
+        CHECK (EXTRACT(DAY FROM pay_period) = 1),
+    CONSTRAINT chk_payrolls_amounts_non_negative
+        CHECK (base_salary >= 0 AND lop_deduction >= 0 AND bonus >= 0),
+    CONSTRAINT chk_payrolls_lop_within_base
+        CHECK (lop_deduction <= base_salary),
+    CONSTRAINT chk_payrolls_net_formula
+        CHECK (net_salary = base_salary - lop_deduction + bonus),
+    CONSTRAINT chk_payrolls_payment_method
+        CHECK (payment_method IN ('Bank Transfer', 'UPI', 'Cheque', 'Cash')),
+    CONSTRAINT chk_payrolls_status
+        CHECK (status IN ('Pending', 'Processed')),
+    CONSTRAINT chk_payrolls_processed_consistency
+        CHECK ((status = 'Processed') = (processed_at IS NOT NULL))
+);
+CREATE INDEX idx_payrolls_company_period ON payrolls (company_id, pay_period);
