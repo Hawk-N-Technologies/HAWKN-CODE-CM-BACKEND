@@ -134,3 +134,58 @@ VALUES
     CONSTRAINT uq_users_company_email
         UNIQUE (company_id, email)
 );
+
+
+
+
+
+CREATE TABLE employees (
+    id SERIAL PRIMARY KEY,
+
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+
+    user_id INTEGER NOT NULL UNIQUE,
+    company_id INTEGER NOT NULL,
+
+    phone1 VARCHAR(30),
+    phone2 VARCHAR(30),
+    whatsapp VARCHAR(30),
+
+    joining_date DATE,
+    date_of_birth DATE,
+
+    linkedin_url TEXT,
+    github_url TEXT,
+
+    aadhaar_last4 VARCHAR(4),
+
+    employment_type VARCHAR(30) NOT NULL DEFAULT 'Full Time',
+    employment_status VARCHAR(30) NOT NULL DEFAULT 'Active',
+
+    photo_url TEXT,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_employees_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_employees_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT chk_employment_type
+        CHECK (employment_type IN ('Full Time', 'Intern', 'Probation')),
+
+    CONSTRAINT chk_employment_status
+        CHECK (employment_status IN ('Active', 'On Leave', 'Exited')),
+
+    CONSTRAINT chk_aadhaar_last4
+        CHECK (aadhaar_last4 IS NULL OR aadhaar_last4 ~ '^[0-9]{4}$'),
+
+    CONSTRAINT uq_employees_company_user
+        UNIQUE (company_id, user_id)
+);

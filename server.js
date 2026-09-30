@@ -10,6 +10,8 @@ const companyPolicyRoutes = require("./routes/companyPolicyRoutes");
 const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesResponsibilitiesRoutes");
 const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
 const authRoutes = require("./routes/authRoutes");
+const employeeRoutes = require("./routes/employeeRoutes");
+
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
 const app = express();
@@ -35,6 +37,7 @@ app.use("/api/company", companyPolicyRoutes);
 app.use("/api/company", companyRolesResponsibilitiesRoutes);
 app.use("/api/company", employeeHierarchyRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/employees", employeeRoutes);
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
@@ -57,4 +60,3 @@ async function startServer() {
 }
 
 startServer();
-
