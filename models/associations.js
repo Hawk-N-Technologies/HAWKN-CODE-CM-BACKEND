@@ -6,6 +6,7 @@ const EmployeeHierarchyImage = require("./EmployeeHierarchyImage");
 const User = require("./User");
 const Role = require("./Role");
 const Employee = require("./Employee");
+const EmployeeOnboarding = require("./EmployeeOnboarding");
 
 // Company → Users
 Company.hasMany(User, {
@@ -51,6 +52,17 @@ Employee.belongsTo(Company, {
   as: "company",
 });
 
+// Employee → Onboarding (one checklist per employee)
+Employee.hasOne(EmployeeOnboarding, {
+  foreignKey: "employeeId",
+  as: "onboarding",
+});
+
+EmployeeOnboarding.belongsTo(Employee, {
+  foreignKey: "employeeId",
+  as: "employee",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -60,4 +72,5 @@ module.exports = {
   User,
   Role,
   Employee,
+  EmployeeOnboarding,
 };

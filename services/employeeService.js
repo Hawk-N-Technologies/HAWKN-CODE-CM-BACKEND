@@ -1,6 +1,6 @@
-const { User } = require("../models/User");
-const { Employee } = require("../models/Employee");
-const { Role } = require("../models/Role");
+// Models export themselves directly (module.exports = User), so no { } here.
+// Loading them via associations also guarantees the "user"/"role" links exist.
+const { User, Employee, Role } = require("../models/associations");
 const sequelize = require("../config/db");
 
 async function getAllEmployees(companyId) {
