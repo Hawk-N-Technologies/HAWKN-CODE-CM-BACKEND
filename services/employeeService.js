@@ -1,67 +1,79 @@
-const { User, Employee, Role, Company } = require("../models");
+const { User, Employee, Role } = require("../models");
 const sequelize = require("../config/db");
 
-const getAllEmployees = async (companyId) => {
-  return Employee.findAll({
-    where: {
-      companyId,
-    },
-    include: [
-      {
-        model: User,
-        as: "user",
-        attributes: {
-          exclude: ["passwordHash"],
-        },
-        include: [
-          {
-            model: Role,
-            as: "role",
-            attributes: ["id", "uuid", "name", "description"],
-          },
-        ],
+async function getAllEmployees(companyId) {
+  try {
+    return await Employee.findAll({
+      where: {
+        companyId,
       },
-    ],
-    order: [["createdAt", "DESC"]],
-  });
-};
-
-const getEmployeeById = async (employeeId, companyId) => {
-  return Employee.findOne({
-    where: {
-      id: employeeId,
-      companyId,
-    },
-    include: [
-      {
-        model: User,
-        as: "user",
-        attributes: {
-          exclude: ["passwordHash"],
-        },
-        include: [
-          {
-            model: Role,
-            as: "role",
-            attributes: ["id", "uuid", "name", "description"],
+      include: [
+        {
+          model: User,
+          as: "user",
+          attributes: {
+            exclude: ["passwordHash"],
           },
-        ],
+          include: [
+            {
+              model: Role,
+              as: "role",
+              attributes: ["id", "uuid", "name", "description"],
+            },
+          ],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function getEmployeeById(employeeId, companyId) {
+  try {
+    return await Employee.findOne({
+      where: {
+        id: employeeId,
+        companyId,
       },
-    ],
-  });
-};
+      include: [
+        {
+          model: User,
+          as: "user",
+          attributes: {
+            exclude: ["passwordHash"],
+          },
+          include: [
+            {
+              model: Role,
+              as: "role",
+              attributes: ["id", "uuid", "name", "description"],
+            },
+          ],
+        },
+      ],
+    });
+  } catch (error) {
+    throw error;
+  }
+}
 
-const getAllRoles = async () => {
-  return Role.findAll({
-    where: {
-      isActive: true,
-    },
-    attributes: ["id", "uuid", "name", "description"],
-    order: [["name", "ASC"]],
-  });
-};
+async function getAllRoles() {
+  try {
+    return await Role.findAll({
+      where: {
+        isActive: true,
+      },
+      attributes: ["id", "uuid", "name", "description"],
+      order: [["name", "ASC"]],
+    });
+  } catch (error) {
+    throw error;
+  }
+}
 
-const createEmployee = async (data, companyId) => {
+async function createEmployee(data, companyId) {
   const transaction = await sequelize.transaction();
 
   try {
@@ -71,7 +83,6 @@ const createEmployee = async (data, companyId) => {
       email,
       passwordHash,
       roleId,
-
       phone1,
       phone2,
       whatsapp,
@@ -85,7 +96,7 @@ const createEmployee = async (data, companyId) => {
       photoUrl,
     } = data;
 
-    // Check role exists and is active
+    // Check role
     const role = await Role.findOne({
       where: {
         id: roleId,
@@ -98,7 +109,7 @@ const createEmployee = async (data, companyId) => {
       throw new Error("Invalid or inactive role.");
     }
 
-    // Check email already exists in this company
+    // Check duplicate email
     const existingUser = await User.findOne({
       where: {
         companyId,
@@ -111,7 +122,7 @@ const createEmployee = async (data, companyId) => {
       throw new Error("A user with this email already exists.");
     }
 
-    // 1. Create User
+    // Create user
     const user = await User.create(
       {
         companyId,
@@ -126,12 +137,11 @@ const createEmployee = async (data, companyId) => {
       },
     );
 
-    // 2. Create Employee profile
+    // Create employee
     const employee = await Employee.create(
       {
         userId: user.id,
         companyId,
-
         phone1,
         phone2,
         whatsapp,
@@ -149,17 +159,18 @@ const createEmployee = async (data, companyId) => {
       },
     );
 
+    // Commit only after both records are created
     await transaction.commit();
 
-    // Return complete employee after commit
-    return getEmployeeById(employee.id, companyId);
+    // Fetch complete employee after transaction is committed
+    return await getEmployeeById(employee.id, companyId);
   } catch (error) {
     await transaction.rollback();
     throw error;
   }
-};
+}
 
-const updateEmployee = async (employeeId, companyId, data) => {
+async function updateEmployee(employeeId, companyId, data) {
   const transaction = await sequelize.transaction();
 
   try {
@@ -199,7 +210,7 @@ const updateEmployee = async (employeeId, companyId, data) => {
       photoUrl,
     } = data;
 
-    // Validate role if supplied
+    // Validate role when supplied
     if (roleId !== undefined) {
       const role = await Role.findOne({
         where: {
@@ -214,7 +225,22 @@ const updateEmployee = async (employeeId, companyId, data) => {
       }
     }
 
-    // Update User information
+    // Check duplicate email when email is changed
+    if (email !== undefined && email !== employee.user.email) {
+      const existingUser = await User.findOne({
+        where: {
+          companyId,
+          email,
+        },
+        transaction,
+      });
+
+      if (existingUser && existingUser.id !== employee.user.id) {
+        throw new Error("A user with this email already exists.");
+      }
+    }
+
+    // Update User
     await employee.user.update(
       {
         ...(firstName !== undefined && { firstName }),
@@ -227,7 +253,7 @@ const updateEmployee = async (employeeId, companyId, data) => {
       },
     );
 
-    // Update Employee information
+    // Update Employee
     await employee.update(
       {
         ...(phone1 !== undefined && { phone1 }),
@@ -249,36 +275,48 @@ const updateEmployee = async (employeeId, companyId, data) => {
 
     await transaction.commit();
 
-    return getEmployeeById(employeeId, companyId);
+    return await getEmployeeById(employeeId, companyId);
   } catch (error) {
     await transaction.rollback();
     throw error;
   }
-};
+}
 
-const deleteEmployee = async (employeeId, companyId) => {
-  const employee = await Employee.findOne({
-    where: {
-      id: employeeId,
-      companyId,
-    },
-  });
+async function deleteEmployee(employeeId, companyId) {
+  const transaction = await sequelize.transaction();
 
-  if (!employee) {
-    throw new Error("Employee not found.");
+  try {
+    const employee = await Employee.findOne({
+      where: {
+        id: employeeId,
+        companyId,
+      },
+      transaction,
+    });
+
+    if (!employee) {
+      throw new Error("Employee not found.");
+    }
+
+    // Delete user.
+    // Employee will be deleted automatically if
+    // employee.user_id has ON DELETE CASCADE.
+    await User.destroy({
+      where: {
+        id: employee.userId,
+        companyId,
+      },
+      transaction,
+    });
+
+    await transaction.commit();
+
+    return true;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
   }
-
-  // Because employees.user_id has ON DELETE CASCADE,
-  // deleting the user will also delete the employee.
-  await User.destroy({
-    where: {
-      id: employee.userId,
-      companyId,
-    },
-  });
-
-  return true;
-};
+}
 
 module.exports = {
   getAllEmployees,
