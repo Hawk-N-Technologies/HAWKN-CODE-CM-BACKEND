@@ -6,6 +6,7 @@ const EmployeeHierarchyImage = require("./EmployeeHierarchyImage");
 const User = require("./User");
 const Role = require("./Role");
 const Employee = require("./Employee");
+const Payroll = require("./Payroll");
 
 // Company → Users
 Company.hasMany(User, {
@@ -51,6 +52,17 @@ Employee.belongsTo(Company, {
   as: "company",
 });
 
+// User → Payrolls (the employee being paid)
+User.hasMany(Payroll, {
+  foreignKey: "userId",
+  as: "payrolls",
+});
+
+Payroll.belongsTo(User, {
+  foreignKey: "userId",
+  as: "employee",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -60,4 +72,5 @@ module.exports = {
   User,
   Role,
   Employee,
+  Payroll,
 };
