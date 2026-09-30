@@ -105,4 +105,8 @@ module.exports = {
   User,
   Role,
   Employee,
+  Payroll,
+  Attendance,
+  EmployeeOnboarding,
+  
 };

@@ -1,12 +1,7 @@
-<<<<<<< HEAD
 const User = require("../models/User");
 const Employee = require("../models/Employee");
 const Role = require("../models/Role");
-=======
-// Models export themselves directly (module.exports = User), so no { } here.
-// Loading them via associations also guarantees the "user"/"role" links exist.
-const { User, Employee, Role } = require("../models/associations");
->>>>>>> feature/hr-1
+
 const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
 
@@ -479,9 +474,5 @@ module.exports = {
   createEmployee,
   updateEmployee,
   deleteEmployee,
-<<<<<<< HEAD
   getEmployeeIdByUserId,
 };
-=======
-};
->>>>>>> feature/hr-1
