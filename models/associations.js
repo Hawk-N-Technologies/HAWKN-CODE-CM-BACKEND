@@ -5,6 +5,7 @@ const CompanyRolesResponsibilities = require("./CompanyRolesResponsibilities");
 const EmployeeHierarchyImage = require("./EmployeeHierarchyImage");
 const User = require("./User");
 const Role = require("./Role");
+const Payroll = require("./Payroll");
 const Employee = require("./Employee");
 
 // Company → Users
