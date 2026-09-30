@@ -11,8 +11,12 @@ const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesRespons
 const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
 const authRoutes = require("./routes/authRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
+<<<<<<< HEAD
 const attendanceRoutes = require("./routes/attendanceRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
+=======
+const employeeOnboardingRoutes = require("./routes/employeeOnboardingRoutes");
+>>>>>>> feature/hr-1
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -40,8 +44,12 @@ app.use("/api/company", companyRolesResponsibilitiesRoutes);
 app.use("/api/company", employeeHierarchyRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/employees", employeeRoutes);
+<<<<<<< HEAD
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/payroll", payrollRoutes);
+=======
+app.use("/api/onboarding", employeeOnboardingRoutes);
+>>>>>>> feature/hr-1
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;

@@ -7,6 +7,7 @@ const User = require("./User");
 const Role = require("./Role");
 const Payroll = require("./Payroll");
 const Employee = require("./Employee");
+const EmployeeOnboarding = require("./EmployeeOnboarding");
 const Attendance = require("./Attendance");
 
 // Company → Users
@@ -53,6 +54,17 @@ Employee.belongsTo(Company, {
   as: "company",
 });
 
+// Employee → Onboarding (one checklist per employee)
+Employee.hasOne(EmployeeOnboarding, {
+  foreignKey: "employeeId",
+  as: "onboarding",
+});
+
+EmployeeOnboarding.belongsTo(Employee, {
+  foreignKey: "employeeId",
+  as: "employee",
+});
+
 // User → Payrolls (the employee being paid)
 User.hasMany(Payroll, {
   foreignKey: "userId",
@@ -93,5 +105,4 @@ module.exports = {
   User,
   Role,
   Employee,
-  Payroll
 };
