@@ -93,4 +93,5 @@ module.exports = {
   User,
   Role,
   Employee,
+  Payroll
 };
