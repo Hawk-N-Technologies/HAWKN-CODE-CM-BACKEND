@@ -447,6 +447,25 @@ async function deleteEmployee(employeeId, companyId) {
   }
 }
 
+async function getEmployeeIdByUserId(userId, transaction) {
+  try {
+    const employee = await Employee.findOne({
+      where: {
+        userId,
+      },
+      attributes: ["id"],
+      transaction,
+    });
+
+    if (!employee) {
+      throw new Error("Employee record not found for this user.");
+    }
+
+    return employee.id;
+  } catch (error) {
+    throw error;
+  }
+}
 module.exports = {
   getAllEmployees,
   getEmployeeById,
@@ -454,4 +473,5 @@ module.exports = {
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  getEmployeeIdByUserId,
 };

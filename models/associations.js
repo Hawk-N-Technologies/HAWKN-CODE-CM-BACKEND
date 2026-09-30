@@ -6,6 +6,7 @@ const EmployeeHierarchyImage = require("./EmployeeHierarchyImage");
 const User = require("./User");
 const Role = require("./Role");
 const Employee = require("./Employee");
+const Attendance = require("./Attendance");
 
 // Company → Users
 Company.hasMany(User, {
@@ -51,6 +52,26 @@ Employee.belongsTo(Company, {
   as: "company",
 });
 
+Employee.hasMany(Attendance, {
+  foreignKey: "employeeId",
+  as: "attendances",
+});
+
+Attendance.belongsTo(Employee, {
+  foreignKey: "employeeId",
+  as: "employee",
+});
+
+Company.hasMany(Attendance, {
+  foreignKey: "companyId",
+  as: "attendances",
+});
+
+Attendance.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -60,4 +81,5 @@ module.exports = {
   User,
   Role,
   Employee,
+  Attendance,
 };
