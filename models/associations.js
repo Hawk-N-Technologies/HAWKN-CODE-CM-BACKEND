@@ -7,6 +7,7 @@ const User = require("./User");
 const Role = require("./Role");
 const Payroll = require("./Payroll");
 const Employee = require("./Employee");
+const Attendance = require("./Attendance");
 
 // Company → Users
 Company.hasMany(User, {
