@@ -1,4 +1,6 @@
-const { User, Employee, Role } = require("../models");
+const { User } = require("../models/User");
+const { Employee } = require("../models/Employee");
+const { Role } = require("../models/Role");
 const sequelize = require("../config/db");
 
 async function getAllEmployees(companyId) {
