@@ -49,6 +49,11 @@ module.exports = {
         allowNull: true,
       },
 
+      company_email: {
+        type: Sequelize.STRING(30),
+        allowNull: true,
+      },
+
       phone2: {
         type: Sequelize.STRING(30),
         allowNull: true,

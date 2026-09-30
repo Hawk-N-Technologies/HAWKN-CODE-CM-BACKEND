@@ -221,6 +221,7 @@ async function updateEmployee(employeeId, companyId, data) {
       firstName,
       lastName,
       email,
+      companyEmail,
       password,
       confirmPassword,
       roleUuid,
@@ -339,6 +340,9 @@ async function updateEmployee(employeeId, companyId, data) {
      * --------------------------------------------------
      */
     const employeeUpdateData = {
+      ...(companyEmail !== undefined && {
+        companyEmail: companyEmail || null,
+      }),
       ...(phone1 !== undefined && {
         phone1: phone1 || null,
       }),
@@ -388,16 +392,8 @@ async function updateEmployee(employeeId, companyId, data) {
       transaction,
     });
 
-    /**
-     * --------------------------------------------------
-     * COMMIT
-     * --------------------------------------------------
-     */
     await transaction.commit();
 
-    /**
-     * Fetch fresh data after commit.
-     */
     return await getEmployeeById(employeeId, companyId);
   } catch (error) {
     /**

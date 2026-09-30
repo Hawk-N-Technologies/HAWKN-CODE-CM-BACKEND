@@ -71,7 +71,6 @@ const createEmployee = async (req, res) => {
     const companyId = req.user.companyId;
 
     console.log(req.body);
-    
 
     const employee = await employeeService.createEmployee(req.body, companyId);
 
@@ -104,7 +103,6 @@ const updateEmployee = async (req, res) => {
   try {
     const companyId = req.user.companyId;
     const { id } = req.params;
-
     const employee = await employeeService.updateEmployee(
       id,
       companyId,

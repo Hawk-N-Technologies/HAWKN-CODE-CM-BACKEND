@@ -146,9 +146,11 @@ CREATE TABLE employees (
 
     user_id INTEGER NOT NULL UNIQUE,
     company_id INTEGER NOT NULL,
+    company_email VARCHAR(255),
 
     phone1 VARCHAR(30),
     phone2 VARCHAR(30),
+
     whatsapp VARCHAR(30),
 
     joining_date DATE,

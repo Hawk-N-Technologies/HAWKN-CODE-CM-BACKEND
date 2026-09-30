@@ -36,6 +36,12 @@ const Employee = sequelize.define(
       field: "phone1",
     },
 
+    companyEmail: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "company_email",
+    },
+
     phone2: {
       type: DataTypes.STRING(30),
       allowNull: true,
