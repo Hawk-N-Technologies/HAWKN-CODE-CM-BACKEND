@@ -70,6 +70,9 @@ const createEmployee = async (req, res) => {
   try {
     const companyId = req.user.companyId;
 
+    console.log(req.body);
+    
+
     const employee = await employeeService.createEmployee(req.body, companyId);
 
     return res.status(201).json({

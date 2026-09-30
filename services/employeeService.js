@@ -1,7 +1,8 @@
-const { User } = require("../models/User");
-const { Employee } = require("../models/Employee");
-const { Role } = require("../models/Role");
+const User = require("../models/User");
+const Employee = require("../models/Employee");
+const Role = require("../models/Role");
 const sequelize = require("../config/db");
+const bcrypt = require("bcrypt");
 
 async function getAllEmployees(companyId) {
   try {
@@ -61,13 +62,29 @@ async function getEmployeeById(employeeId, companyId) {
   }
 }
 
+const getRoleByUuid = async (uuid, transaction) => {
+  const role = await Role.findOne({
+    where: {
+      uuid,
+      isActive: true,
+    },
+    transaction,
+  });
+
+  if (!role) {
+    throw new Error("Invalid or inactive role.");
+  }
+
+  return role;
+};
+
 async function getAllRoles() {
   try {
     return await Role.findAll({
       where: {
         isActive: true,
       },
-      attributes: ["id", "uuid", "name", "description"],
+      attributes: ["uuid", "name", "description"],
       order: [["name", "ASC"]],
     });
   } catch (error) {
@@ -76,15 +93,16 @@ async function getAllRoles() {
 }
 
 async function createEmployee(data, companyId) {
-  const transaction = await sequelize.transaction();
+  const transaction = await sequelize.startUnmanagedTransaction();
 
   try {
     const {
       firstName,
       lastName,
       email,
-      passwordHash,
-      roleId,
+      password,
+      confirmPassword,
+      roleUuid,
       phone1,
       phone2,
       whatsapp,
@@ -98,10 +116,9 @@ async function createEmployee(data, companyId) {
       photoUrl,
     } = data;
 
-    // Check role
     const role = await Role.findOne({
       where: {
-        id: roleId,
+        uuid: roleUuid,
         isActive: true,
       },
       transaction,
@@ -111,7 +128,6 @@ async function createEmployee(data, companyId) {
       throw new Error("Invalid or inactive role.");
     }
 
-    // Check duplicate email
     const existingUser = await User.findOne({
       where: {
         companyId,
@@ -123,12 +139,18 @@ async function createEmployee(data, companyId) {
     if (existingUser) {
       throw new Error("A user with this email already exists.");
     }
+    if (password !== confirmPassword) {
+      throw new Error("Password and confirm password do not match.");
+    }
+    // Hash password using 12 salt rounds
+    const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create user
+    const roleByuuid = await getRoleByUuid(roleUuid, transaction);
+    console.log(roleByuuid);
     const user = await User.create(
       {
         companyId,
-        roleId,
+        roleId: roleByuuid.id,
         firstName,
         lastName,
         email,
@@ -139,7 +161,6 @@ async function createEmployee(data, companyId) {
       },
     );
 
-    // Create employee
     const employee = await Employee.create(
       {
         userId: user.id,
@@ -161,10 +182,8 @@ async function createEmployee(data, companyId) {
       },
     );
 
-    // Commit only after both records are created
     await transaction.commit();
 
-    // Fetch complete employee after transaction is committed
     return await getEmployeeById(employee.id, companyId);
   } catch (error) {
     await transaction.rollback();
@@ -173,7 +192,7 @@ async function createEmployee(data, companyId) {
 }
 
 async function updateEmployee(employeeId, companyId, data) {
-  const transaction = await sequelize.transaction();
+  const transaction = await sequelize.startUnmanagedTransaction();
 
   try {
     const employee = await Employee.findOne({
@@ -194,11 +213,17 @@ async function updateEmployee(employeeId, companyId, data) {
       throw new Error("Employee not found.");
     }
 
+    if (!employee.user) {
+      throw new Error("Employee user account not found.");
+    }
+
     const {
       firstName,
       lastName,
       email,
-      roleId,
+      password,
+      confirmPassword,
+      roleUuid,
       phone1,
       phone2,
       whatsapp,
@@ -212,22 +237,24 @@ async function updateEmployee(employeeId, companyId, data) {
       photoUrl,
     } = data;
 
-    // Validate role when supplied
-    if (roleId !== undefined) {
-      const role = await Role.findOne({
-        where: {
-          id: roleId,
-          isActive: true,
-        },
-        transaction,
-      });
+    /**
+     * --------------------------------------------------
+     * RESOLVE ROLE UUID -> ROLE ID
+     * --------------------------------------------------
+     */
+    let roleId;
 
-      if (!role) {
-        throw new Error("Invalid or inactive role.");
-      }
+    if (roleUuid !== undefined) {
+      const role = await getRoleByUuid(roleUuid, transaction);
+
+      roleId = role.id;
     }
 
-    // Check duplicate email when email is changed
+    /**
+     * --------------------------------------------------
+     * CHECK DUPLICATE EMAIL
+     * --------------------------------------------------
+     */
     if (email !== undefined && email !== employee.user.email) {
       const existingUser = await User.findOne({
         where: {
@@ -242,44 +269,146 @@ async function updateEmployee(employeeId, companyId, data) {
       }
     }
 
-    // Update User
-    await employee.user.update(
-      {
-        ...(firstName !== undefined && { firstName }),
-        ...(lastName !== undefined && { lastName }),
-        ...(email !== undefined && { email }),
-        ...(roleId !== undefined && { roleId }),
-      },
-      {
-        transaction,
-      },
-    );
+    /**
+     * --------------------------------------------------
+     * PASSWORD
+     * --------------------------------------------------
+     *
+     * Password is optional during update.
+     *
+     * If neither password nor confirmPassword is sent:
+     *     Don't change password.
+     *
+     * If either one is sent:
+     *     Both are required.
+     *
+     * Both must match.
+     */
+    let passwordHash;
 
-    // Update Employee
-    await employee.update(
-      {
-        ...(phone1 !== undefined && { phone1 }),
-        ...(phone2 !== undefined && { phone2 }),
-        ...(whatsapp !== undefined && { whatsapp }),
-        ...(joiningDate !== undefined && { joiningDate }),
-        ...(dateOfBirth !== undefined && { dateOfBirth }),
-        ...(linkedinUrl !== undefined && { linkedinUrl }),
-        ...(githubUrl !== undefined && { githubUrl }),
-        ...(aadhaarLast4 !== undefined && { aadhaarLast4 }),
-        ...(employmentType !== undefined && { employmentType }),
-        ...(employmentStatus !== undefined && { employmentStatus }),
-        ...(photoUrl !== undefined && { photoUrl }),
-      },
-      {
-        transaction,
-      },
-    );
+    if (password !== undefined || confirmPassword !== undefined) {
+      if (!password || !confirmPassword) {
+        throw new Error("Password and confirm password are required.");
+      }
 
+      if (password !== confirmPassword) {
+        throw new Error("Password and confirm password do not match.");
+      }
+
+      if (password.length < 8) {
+        throw new Error("Password must be at least 8 characters.");
+      }
+
+      passwordHash = await bcrypt.hash(password, 12);
+    }
+
+    /**
+     * --------------------------------------------------
+     * UPDATE USER
+     * --------------------------------------------------
+     */
+    const userUpdateData = {
+      ...(firstName !== undefined && {
+        firstName: firstName.trim(),
+      }),
+
+      ...(lastName !== undefined && {
+        lastName: lastName.trim(),
+      }),
+
+      ...(email !== undefined && {
+        email: email.trim(),
+      }),
+
+      ...(roleId !== undefined && {
+        roleId,
+      }),
+
+      ...(passwordHash !== undefined && {
+        passwordHash,
+      }),
+    };
+
+    await employee.user.update(userUpdateData, {
+      transaction,
+    });
+
+    /**
+     * --------------------------------------------------
+     * UPDATE EMPLOYEE
+     * --------------------------------------------------
+     */
+    const employeeUpdateData = {
+      ...(phone1 !== undefined && {
+        phone1: phone1 || null,
+      }),
+
+      ...(phone2 !== undefined && {
+        phone2: phone2 || null,
+      }),
+
+      ...(whatsapp !== undefined && {
+        whatsapp: whatsapp || null,
+      }),
+
+      ...(joiningDate !== undefined && {
+        joiningDate: joiningDate || null,
+      }),
+
+      ...(dateOfBirth !== undefined && {
+        dateOfBirth: dateOfBirth || null,
+      }),
+
+      ...(linkedinUrl !== undefined && {
+        linkedinUrl: linkedinUrl || null,
+      }),
+
+      ...(githubUrl !== undefined && {
+        githubUrl: githubUrl || null,
+      }),
+
+      ...(aadhaarLast4 !== undefined && {
+        aadhaarLast4: aadhaarLast4 || null,
+      }),
+
+      ...(employmentType !== undefined && {
+        employmentType,
+      }),
+
+      ...(employmentStatus !== undefined && {
+        employmentStatus,
+      }),
+
+      ...(photoUrl !== undefined && {
+        photoUrl: photoUrl || null,
+      }),
+    };
+
+    await employee.update(employeeUpdateData, {
+      transaction,
+    });
+
+    /**
+     * --------------------------------------------------
+     * COMMIT
+     * --------------------------------------------------
+     */
     await transaction.commit();
 
+    /**
+     * Fetch fresh data after commit.
+     */
     return await getEmployeeById(employeeId, companyId);
   } catch (error) {
-    await transaction.rollback();
+    /**
+     * Rollback only if transaction is still active.
+     */
+    try {
+      await transaction.rollback();
+    } catch (rollbackError) {
+      console.error("Transaction rollback error:", rollbackError);
+    }
+
     throw error;
   }
 }
