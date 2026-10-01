@@ -24,6 +24,7 @@
   "homepage": "https://github.com/Hawk-N-Technologies/HAWKN-CODE-CM-BACKEND#readme",
   "dependencies": {
     "@sequelize/core": "^7.0.0-alpha.48",
+    "@sequelize/mysql": "^7.0.0-alpha.48",
     "@sequelize/postgres": "^7.0.0-alpha.48",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
