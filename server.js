@@ -20,7 +20,10 @@ require("./models/associations");
 const app = express();
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "http://frontend-codefrontendtemp-weigty-ed3f48-194-164-148-10.sslip.io",
+    ],
   }),
 );
 
