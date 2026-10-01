@@ -7,11 +7,11 @@ async function login(req, res, next) {
 
     const result = await authService.login(email, password);
 
-    res.cookie("access_token", result.token, {
+    res.cookies("access_token", result.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 30,
+      maxAge: 24 * 60 * 60 * 30 * 1000,
     });
 
     return res.status(200).json({
