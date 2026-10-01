@@ -43,7 +43,7 @@ async function startServer() {
   try {
     await sequelize.authenticate();
 
-    console.log("✅ PostgreSQL connected successfully");
+    console.log(`✅ Database (${sequelize.dialect.name}) connected successfully`);
 
     app.listen(PORT, () => {
       console.log(`🚀 Server started on port ${PORT}`);

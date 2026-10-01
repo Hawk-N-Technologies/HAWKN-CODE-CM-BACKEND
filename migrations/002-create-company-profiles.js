@@ -2,6 +2,11 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
+    const uuidDefault = isMysql
+      ? Sequelize.literal("(UUID())")
+      : Sequelize.literal("gen_random_uuid()");
+
     await queryInterface.createTable("company_profiles", {
       id: {
         type: Sequelize.INTEGER,
@@ -14,7 +19,7 @@ module.exports = {
         type: Sequelize.UUID,
         allowNull: false,
         unique: true,
-        defaultValue: Sequelize.literal("gen_random_uuid()"),
+        defaultValue: uuidDefault,
       },
 
       company_id: {

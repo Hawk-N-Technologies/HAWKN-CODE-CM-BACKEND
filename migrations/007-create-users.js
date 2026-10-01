@@ -2,6 +2,11 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
+    const uuidDefault = isMysql
+      ? Sequelize.literal("(UUID())")
+      : Sequelize.literal("gen_random_uuid()");
+
     await queryInterface.createTable("users", {
       id: {
         type: Sequelize.INTEGER,
@@ -14,7 +19,7 @@ module.exports = {
         type: Sequelize.UUID,
         allowNull: false,
         unique: true,
-        defaultValue: Sequelize.literal("gen_random_uuid()"),
+        defaultValue: uuidDefault,
       },
 
       company_id: {
@@ -82,12 +87,24 @@ module.exports = {
       },
     });
 
-    // Add the composite unique constraint only once.
-    await queryInterface.sequelize.query(`
-      ALTER TABLE "users"
-      ADD CONSTRAINT "uq_users_company_email"
-      UNIQUE ("company_id", "email");
-    `);
+    // Add the composite unique constraint
+    try {
+      await queryInterface.addConstraint("users", {
+        fields: ["company_id", "email"],
+        type: "unique",
+        name: "uq_users_company_email",
+      });
+    } catch (err) {
+      if (
+        err.original?.code === "ER_DUP_KEYNAME" ||
+        err.message?.includes("already exists") ||
+        err.message?.includes("Duplicate key name")
+      ) {
+        // Constraint already exists
+      } else {
+        throw err;
+      }
+    }
   },
 
   async down(queryInterface) {

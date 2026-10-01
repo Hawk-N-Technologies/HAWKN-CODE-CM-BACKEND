@@ -10,17 +10,43 @@ async function migrate() {
 
     console.log("✅ Database connected");
 
+    await sequelize.queryInterface.createTable("SequelizeMeta", {
+      name: {
+        type: sequelize.Sequelize.STRING,
+        allowNull: false,
+        unique: true,
+        primaryKey: true,
+      },
+    });
+
+    const [executedRecords] = await sequelize.query(
+      "SELECT name FROM SequelizeMeta;"
+    );
+    const executedMigrations = new Set(
+      executedRecords.map((row) => row.name || row.NAME)
+    );
+
     const files = fs
       .readdirSync(migrationsPath)
       .filter((file) => file.endsWith(".js"))
       .sort();
 
     for (const file of files) {
+      if (executedMigrations.has(file)) {
+        console.log(`⏩ Already applied: ${file}`);
+        continue;
+      }
+
       console.log(`Running migration: ${file}`);
 
       const migration = require(path.join(migrationsPath, file));
 
       await migration.up(sequelize.queryInterface, sequelize.Sequelize);
+
+      await sequelize.query(
+        "INSERT INTO SequelizeMeta (name) VALUES (?);",
+        { replacements: [file] }
+      );
 
       console.log(`✅ Completed: ${file}`);
     }

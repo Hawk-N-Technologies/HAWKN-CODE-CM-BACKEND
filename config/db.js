@@ -1,10 +1,16 @@
 require("dotenv").config();
 const { Sequelize } = require("@sequelize/core");
 const { PostgresDialect } = require("@sequelize/postgres");
+const { MySqlDialect } = require("@sequelize/mysql");
+
+const dbUrl = process.env.DATABASE_URL || "";
+const isMysql = dbUrl.startsWith("mysql://");
 
 const sequelize = new Sequelize({
-  dialect: PostgresDialect,
-  url: process.env.DATABASE_URL,
+  dialect: isMysql ? MySqlDialect : PostgresDialect,
+  url: dbUrl,
+  logging: process.env.NODE_ENV === "development" ? console.log : false,
 });
 
 module.exports = sequelize;
+
