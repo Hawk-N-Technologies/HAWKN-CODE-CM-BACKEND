@@ -288,3 +288,19 @@ CREATE TABLE payrolls (
         CHECK ((status = 'Processed') = (processed_at IS NOT NULL))
 );
 CREATE INDEX idx_payrolls_company_period ON payrolls (company_id, pay_period);
+
+
+
+CREATE TABLE employee_salaries (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    employee_id INTEGER NOT NULL UNIQUE,
+    salary NUMERIC(12,2) NOT NULL,
+    CONSTRAINT fk_employee_salaries_employee
+        FOREIGN KEY (employee_id)
+        REFERENCES employees(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT chk_employee_salaries_salary_positive
+        CHECK (salary > 0)
+);
