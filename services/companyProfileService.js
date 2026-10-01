@@ -8,7 +8,7 @@ async function getCompanyProfile(companyId) {
       error.statusCode = 400;
       throw error;
     }
-
+    console.log(companyId);
     const profile = await CompanyProfile.findOne({
       where: {
         companyId: companyId,
