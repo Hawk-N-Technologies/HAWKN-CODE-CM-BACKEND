@@ -1,0 +1,29 @@
+const express = require("express");
+
+const employeeController = require("../controllers/employeeController");
+const authenticate = require("../middleware/authenticate");
+const validate = require("../middleware/validate");
+const { createEmployeeSchema } = require("../validations/employee.validation");
+
+const router = express.Router();
+
+router.get("/roles", authenticate(["hr"]), employeeController.getRoles);
+
+router.get("/", authenticate(["hr"]), employeeController.getEmployees);
+
+router.get("/:id", authenticate(["hr"]), employeeController.getEmployee);
+
+router.post(
+  "/",
+  authenticate(["hr"]),
+  validate(createEmployeeSchema),
+  employeeController.createEmployee,
+);
+
+// Update employee
+router.put("/:id", authenticate(["hr"]), employeeController.updateEmployee);
+
+// Delete employee
+router.delete("/:id", authenticate(["hr"]), employeeController.deleteEmployee);
+
+module.exports = router;

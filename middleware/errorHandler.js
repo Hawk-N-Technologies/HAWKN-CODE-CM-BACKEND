@@ -20,6 +20,8 @@ function errorHandler(error, req, res, next) {
   return res.status(statusCode).json({
     success: false,
     message: error.message,
+    // Field-level errors (e.g. { email: "Already exists" }) so forms can highlight them
+    ...(error.details && { details: error.details }),
   });
 }
 

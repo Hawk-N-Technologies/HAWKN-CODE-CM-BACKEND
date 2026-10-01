@@ -10,12 +10,20 @@ const companyPolicyRoutes = require("./routes/companyPolicyRoutes");
 const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesResponsibilitiesRoutes");
 const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
 const authRoutes = require("./routes/authRoutes");
+const employeeRoutes = require("./routes/employeeRoutes");
+const attendanceRoutes = require("./routes/attendanceRoutes");
+const payrollRoutes = require("./routes/payrollRoutes");
+const employeeOnboardingRoutes = require("./routes/employeeOnboardingRoutes");
+
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
 const app = express();
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "http://frontend-codefrontendtemp-weigty-ed3f48-194-164-148-10.sslip.io",
+    ],
   }),
 );
 
@@ -35,6 +43,11 @@ app.use("/api/company", companyPolicyRoutes);
 app.use("/api/company", companyRolesResponsibilitiesRoutes);
 app.use("/api/company", employeeHierarchyRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/employees", employeeRoutes);
+app.use("/api/attendance", attendanceRoutes);
+app.use("/api/payroll", payrollRoutes);
+
+app.use("/api/onboarding", employeeOnboardingRoutes);
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
@@ -57,4 +70,3 @@ async function startServer() {
 }
 
 startServer();
-
