@@ -6,7 +6,57 @@ const logger = require("../utils/logger");
 
 async function seedUsers() {
   try {
-    // Find company or create it if it doesn't exist
+    // 1. Create required roles if they don't exist
+    const roles = [
+      {
+        name: "admin",
+        description: "System administrator",
+      },
+      {
+        name: "bde",
+        description: "Business Development Executive",
+      },
+      {
+        name: "client",
+        description: "Client user",
+      },
+      {
+        name: "developer",
+        description: "Developer",
+      },
+      {
+        name: "hr",
+        description: "Human Resources",
+      },
+      {
+        name: "project_lead",
+        description: "Project lead",
+      },
+      {
+        name: "tester",
+        description: "Software tester",
+      },
+    ];
+
+    const roleMap = {};
+
+    for (const roleData of roles) {
+      const [role] = await Role.findOrCreate({
+        where: {
+          name: roleData.name,
+        },
+        defaults: roleData,
+      });
+
+      roleMap[role.name] = role.id;
+
+      logger.info("Role ready", {
+        roleId: role.id,
+        name: role.name,
+      });
+    }
+
+    // 2. Find or create company
     const [company, created] = await Company.findOrCreate({
       where: {
         name: "Hawk'N Technologies",
@@ -28,19 +78,7 @@ async function seedUsers() {
       });
     }
 
-    // Get required roles
-    const roles = await Role.findAll({
-      where: {
-        name: ["admin", "hr", "bde", "client", "tester", "developer"],
-      },
-    });
-
-    const roleMap = {};
-
-    roles.forEach((role) => {
-      roleMap[role.name] = role.id;
-    });
-
+    // 3. Only seed Admin and HR users
     const users = [
       {
         firstName: "Admin",
@@ -56,36 +94,9 @@ async function seedUsers() {
         password: "Hr@12345",
         roleName: "hr",
       },
-      {
-        firstName: "BDE",
-        lastName: "User",
-        email: "bde@gmail.com",
-        password: "Bde@12345",
-        roleName: "bde",
-      },
-      {
-        firstName: "Client",
-        lastName: "User",
-        email: "client@gmail.com",
-        password: "Client@123",
-        roleName: "client",
-      },
-      {
-        firstName: "Tester",
-        lastName: "User",
-        email: "tester@gmail.com",
-        password: "Tester@123",
-        roleName: "tester",
-      },
-      {
-        firstName: "Developer",
-        lastName: "User",
-        email: "dev@gmail.com",
-        password: "Dev@12345",
-        roleName: "developer",
-      },
     ];
 
+    // 4. Create users
     for (const user of users) {
       const roleId = roleMap[user.roleName];
 
