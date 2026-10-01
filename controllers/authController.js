@@ -7,7 +7,7 @@ async function login(req, res, next) {
 
     const result = await authService.login(email, password);
 
-    res.cookies("access_token", result.token, {
+    res.cookie("access_token", result.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
