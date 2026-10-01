@@ -53,6 +53,30 @@ const createPayrollSchema = Joi.object({
   .messages({ "any.required": "Request body is required" })
   .prefs({ errors: { wrap: { label: false } } }); // "Base salary can't…" not "\"Base salary\" can't…"
 
+// Edit a Pending payroll (PUT body). Employee + month are NOT editable —
+// changing those makes it a different payroll (delete + re-create instead).
+const updatePayrollSchema = Joi.object({
+  baseSalary: money().greater(0).required().label("Base salary").messages({
+    "number.greater": "Base salary must be more than 0",
+  }),
+
+  lopDeduction: money()
+    .default(0)
+    .label("LOP deduction")
+    .max(Joi.ref("baseSalary"))
+    .messages({ "number.max": "LOP deduction can't be more than the base salary" }),
+
+  bonus: money().default(0).label("Bonus"),
+
+  paymentMethod: Joi.string()
+    .valid(...PAYMENT_METHODS)
+    .default("Bank Transfer")
+    .messages({ "any.only": `Payment method must be one of: ${PAYMENT_METHODS.join(", ")}` }),
+})
+  .required()
+  .messages({ "any.required": "Request body is required" })
+  .prefs({ errors: { wrap: { label: false } } });
+
 // List / filter payroll (GET query string)
 const listPayrollQuerySchema = Joi.object({
   startDate: Joi.date().iso().messages({ "date.format": "Start date must be YYYY-MM-DD" }),
@@ -110,4 +134,5 @@ module.exports = {
   searchEmployeesQuerySchema,
   setSalarySchema,
   listSalariesQuerySchema,
+  updatePayrollSchema
 };
