@@ -4,6 +4,9 @@ const { PostgresDialect } = require("@sequelize/postgres");
 const { MySqlDialect } = require("@sequelize/mysql");
 
 const dbUrl = process.env.DATABASE_URL || "";
+if (!dbUrl) {
+  console.error("⚠️ DATABASE_URL environment variable is missing!");
+}
 const isMysql = dbUrl.startsWith("mysql://");
 
 const sequelize = new Sequelize({

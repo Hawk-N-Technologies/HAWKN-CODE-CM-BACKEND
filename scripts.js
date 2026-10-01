@@ -10,17 +10,22 @@ async function migrate() {
 
     console.log("✅ Database connected");
 
+    const { DataTypes } = require("@sequelize/core");
+
     await sequelize.queryInterface.createTable("SequelizeMeta", {
       name: {
-        type: sequelize.Sequelize.STRING,
+        type: DataTypes.STRING,
         allowNull: false,
         unique: true,
         primaryKey: true,
       },
     });
 
+    const isMysql = sequelize.dialect.name === "mysql";
+    const metaTable = isMysql ? "`SequelizeMeta`" : '"SequelizeMeta"';
+
     const [executedRecords] = await sequelize.query(
-      "SELECT name FROM SequelizeMeta;"
+      `SELECT name FROM ${metaTable};`
     );
     const executedMigrations = new Set(
       executedRecords.map((row) => row.name || row.NAME)
@@ -44,7 +49,7 @@ async function migrate() {
       await migration.up(sequelize.queryInterface, sequelize.Sequelize);
 
       await sequelize.query(
-        "INSERT INTO SequelizeMeta (name) VALUES (?);",
+        `INSERT INTO ${metaTable} (name) VALUES (?);`,
         { replacements: [file] }
       );
 
