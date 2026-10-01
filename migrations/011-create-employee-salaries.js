@@ -2,11 +2,17 @@
 
 /**
  * Salary structure: the fixed monthly salary of each employee.
- * One row per employee (UNIQUE employee_id). Payroll reads this to
- * auto-fill Base Salary; the monthly payroll record itself stays in `payrolls`.
+ * One row per employee (UNIQUE employee_id).
+ * Payroll reads this to auto-fill Base Salary.
  */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
+
+    const uuidDefault = isMysql
+      ? Sequelize.literal("(UUID())")
+      : Sequelize.literal("gen_random_uuid()");
+
     await queryInterface.createTable("employee_salaries", {
       id: {
         type: Sequelize.INTEGER,
@@ -19,7 +25,7 @@ module.exports = {
         type: Sequelize.UUID,
         allowNull: false,
         unique: true,
-        defaultValue: Sequelize.literal("gen_random_uuid()"),
+        defaultValue: uuidDefault,
       },
 
       // One salary per employee
@@ -27,23 +33,28 @@ module.exports = {
         type: Sequelize.INTEGER,
         allowNull: false,
         unique: true,
-        references: { table: "employees", field: "id" },
+
+        references: {
+          table: "employees",
+          field: "id",
+        },
+
         onDelete: "CASCADE",
         onUpdate: "CASCADE",
       },
 
-      // Monthly salary in ₹ — NUMERIC, never FLOAT (no rounding loss)
+      // Monthly salary in ₹
       salary: {
         type: Sequelize.DECIMAL(12, 2),
         allowNull: false,
       },
     });
 
-    // Database-level rule — holds even for edits made directly in pgAdmin
+    // Salary must be greater than zero
     await queryInterface.sequelize.query(`
-      ALTER TABLE "employee_salaries"
-        ADD CONSTRAINT "chk_employee_salaries_salary_positive"
-          CHECK ("salary" > 0);
+      ALTER TABLE employee_salaries
+        ADD CONSTRAINT chk_employee_salaries_salary_positive
+          CHECK (salary > 0);
     `);
   },
 

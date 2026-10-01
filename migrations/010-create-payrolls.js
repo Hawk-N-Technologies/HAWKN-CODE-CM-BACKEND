@@ -2,12 +2,19 @@
 
 /**
  * Payroll ledger: one row per employee (user) per month.
- * Money is NUMERIC(12,2) — never FLOAT, which loses paise in rounding.
- * Rows are financial history, so deleting a user is BLOCKED (RESTRICT)
- * instead of silently wiping their payroll.
+ * Money is DECIMAL(12,2) — never FLOAT.
+ *
+ * One payroll row per:
+ * company + user + pay period
  */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
+
+    const uuidDefault = isMysql
+      ? Sequelize.literal("(UUID())")
+      : Sequelize.literal("gen_random_uuid()");
+
     await queryInterface.createTable("payrolls", {
       id: {
         type: Sequelize.INTEGER,
@@ -20,27 +27,37 @@ module.exports = {
         type: Sequelize.UUID,
         allowNull: false,
         unique: true,
-        defaultValue: Sequelize.literal("gen_random_uuid()"),
+        defaultValue: uuidDefault,
       },
 
       company_id: {
         type: Sequelize.INTEGER,
         allowNull: false,
-        references: { table: "companies", field: "id" },
+
+        references: {
+          table: "companies",
+          field: "id",
+        },
+
         onDelete: "CASCADE",
         onUpdate: "CASCADE",
       },
 
-      // The employee being paid
+      // Employee being paid
       user_id: {
         type: Sequelize.INTEGER,
         allowNull: false,
-        references: { table: "users", field: "id" },
+
+        references: {
+          table: "users",
+          field: "id",
+        },
+
         onDelete: "RESTRICT",
         onUpdate: "CASCADE",
       },
 
-      // Always the 1st of the month, e.g. 2026-09-01 = September 2026
+      // Always the 1st of the month
       pay_period: {
         type: Sequelize.DATEONLY,
         allowNull: false,
@@ -63,7 +80,8 @@ module.exports = {
         defaultValue: 0,
       },
 
-      // Calculated by the server (base - LOP + bonus), never taken from the client
+      // Calculated by server:
+      // base_salary - lop_deduction + bonus
       net_salary: {
         type: Sequelize.DECIMAL(12, 2),
         allowNull: false,
@@ -86,11 +104,16 @@ module.exports = {
         allowNull: true,
       },
 
-      // Audit trail: who created / processed it
+      // Audit trail
       created_by: {
         type: Sequelize.INTEGER,
         allowNull: true,
-        references: { table: "users", field: "id" },
+
+        references: {
+          table: "users",
+          field: "id",
+        },
+
         onDelete: "SET NULL",
         onUpdate: "CASCADE",
       },
@@ -98,7 +121,12 @@ module.exports = {
       processed_by: {
         type: Sequelize.INTEGER,
         allowNull: true,
-        references: { table: "users", field: "id" },
+
+        references: {
+          table: "users",
+          field: "id",
+        },
+
         onDelete: "SET NULL",
         onUpdate: "CASCADE",
       },
@@ -116,31 +144,101 @@ module.exports = {
       },
     });
 
-    // Database-level rules — hold even if someone edits rows directly in pgAdmin
-    await queryInterface.sequelize.query(`
-      ALTER TABLE "payrolls"
-        ADD CONSTRAINT "uq_payrolls_company_user_period"
-          UNIQUE ("company_id", "user_id", "pay_period"),
-        ADD CONSTRAINT "chk_payrolls_period_first_of_month"
-          CHECK (EXTRACT(DAY FROM "pay_period") = 1),
-        ADD CONSTRAINT "chk_payrolls_amounts_non_negative"
-          CHECK ("base_salary" >= 0 AND "lop_deduction" >= 0 AND "bonus" >= 0),
-        ADD CONSTRAINT "chk_payrolls_lop_within_base"
-          CHECK ("lop_deduction" <= "base_salary"),
-        ADD CONSTRAINT "chk_payrolls_net_formula"
-          CHECK ("net_salary" = "base_salary" - "lop_deduction" + "bonus"),
-        ADD CONSTRAINT "chk_payrolls_payment_method"
-          CHECK ("payment_method" IN ('Bank Transfer', 'UPI', 'Cheque', 'Cash')),
-        ADD CONSTRAINT "chk_payrolls_status"
-          CHECK ("status" IN ('Pending', 'Processed')),
-        ADD CONSTRAINT "chk_payrolls_processed_consistency"
-          CHECK (("status" = 'Processed') = ("processed_at" IS NOT NULL));
-    `);
+    // One payroll per employee per month
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["company_id", "user_id", "pay_period"],
+      type: "unique",
+      name: "uq_payrolls_company_user_period",
+    });
 
-    // Fast date-range filtering per company
-    await queryInterface.sequelize.query(`
-      CREATE INDEX "idx_payrolls_company_period" ON "payrolls" ("company_id", "pay_period");
-    `);
+    // Amounts cannot be negative
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["base_salary"],
+      type: "check",
+      where: {
+        base_salary: {
+          [Sequelize.Op.gte]: 0,
+        },
+      },
+      name: "chk_payrolls_base_salary_non_negative",
+    });
+
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["lop_deduction"],
+      type: "check",
+      where: {
+        lop_deduction: {
+          [Sequelize.Op.gte]: 0,
+        },
+      },
+      name: "chk_payrolls_lop_non_negative",
+    });
+
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["bonus"],
+      type: "check",
+      where: {
+        bonus: {
+          [Sequelize.Op.gte]: 0,
+        },
+      },
+      name: "chk_payrolls_bonus_non_negative",
+    });
+
+    // LOP cannot exceed base salary
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["lop_deduction", "base_salary"],
+      type: "check",
+      where: Sequelize.literal("`lop_deduction` <= `base_salary`"),
+      name: "chk_payrolls_lop_within_base",
+    });
+
+    // Net salary formula
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["net_salary", "base_salary", "lop_deduction", "bonus"],
+      type: "check",
+      where: Sequelize.literal(
+        "`net_salary` = `base_salary` - `lop_deduction` + `bonus`",
+      ),
+      name: "chk_payrolls_net_formula",
+    });
+
+    // Payment method
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["payment_method"],
+      type: "check",
+      where: {
+        payment_method: ["Bank Transfer", "UPI", "Cheque", "Cash"],
+      },
+      name: "chk_payrolls_payment_method",
+    });
+
+    // Status
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["status"],
+      type: "check",
+      where: {
+        status: ["Pending", "Processed"],
+      },
+      name: "chk_payrolls_status",
+    });
+
+    // Processed consistency
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["status", "processed_at"],
+      type: "check",
+      where: Sequelize.literal(
+        "(`status` = 'Pending' AND `processed_at` IS NULL) OR " +
+          "(`status` = 'Processed' AND `processed_at` IS NOT NULL)",
+      ),
+      name: "chk_payrolls_processed_consistency",
+    });
+
+    // Fast company/date filtering
+    await queryInterface.addIndex("payrolls", {
+      fields: ["company_id", "pay_period"],
+      name: "idx_payrolls_company_period",
+    });
   },
 
   async down(queryInterface) {
