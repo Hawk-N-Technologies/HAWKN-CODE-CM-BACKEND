@@ -24,7 +24,6 @@ app.use(
       "http://localhost:5173",
       "http://frontend-codefrontendtemp-weigty-ed3f48-194-164-148-10.sslip.io",
     ],
-    credentials: true,
   }),
 );
 
@@ -57,7 +56,9 @@ async function startServer() {
   try {
     await sequelize.authenticate();
 
-    console.log(`✅ Database (${sequelize.dialect.name}) connected successfully`);
+    console.log(
+      `✅ Database (${sequelize.dialect.name}) connected successfully`,
+    );
 
     app.listen(PORT, () => {
       console.log(`🚀 Server started on port ${PORT}`);
