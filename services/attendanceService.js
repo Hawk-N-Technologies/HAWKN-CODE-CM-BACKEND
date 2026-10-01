@@ -123,6 +123,17 @@ async function markAttendance(userId, companyId) {
       );
     }
 
+    console.log("CHECK-IN NOW:", new Date().toISOString());
+
+    console.log(
+      "CHECK-IN IST:",
+      new Intl.DateTimeFormat("en-IN", {
+        timeZone: "Asia/Kolkata",
+        dateStyle: "full",
+        timeStyle: "long",
+      }).format(new Date()),
+    );
+
     const attendance = await Attendance.create(
       {
         employeeId: employee.id,
