@@ -95,8 +95,13 @@ async function findPayableUser(userUuid, companyId, transaction) {
  *   2 = last name starts with it    ("sha"    → "Ishita Shah")
  *   3 = email starts with it        ("tejp"   → tejprakash@…)
  * Values are passed as replacements (never glued into SQL) → no SQL injection.
+ *
+ * Each suggestion also carries the employee's salary (or null), so the
+ * payroll form can auto-fill Base Salary the moment a name is picked.
+ * onlyEmployees: true → only users who have an employee record
+ * (used by Salary Structure, since salaries belong to employees).
  */
-async function searchEmployees(companyId, q) {
+async function searchEmployees(companyId, q, { onlyEmployees = false } = {}) {
   try {
     const prefix = `${escapeLike(q.trim())}%`;
 
@@ -105,12 +110,18 @@ async function searchEmployees(companyId, q) {
               u.first_name AS "firstName",
               u.last_name  AS "lastName",
               u.email,
-              r.name       AS "role"
+              r.name       AS "role",
+              s.salary
          FROM users u
          JOIN roles r ON r.id = u.role_id
+         LEFT JOIN employees e
+                ON e.user_id = u.id
+               AND e.company_id = u.company_id
+         LEFT JOIN employee_salaries s ON s.employee_id = e.id
         WHERE u.company_id = :companyId
           AND u.is_active = TRUE
           AND r.name <> 'client'
+          ${onlyEmployees ? "AND e.id IS NOT NULL" : ""}
           AND (
                 u.first_name ILIKE :prefix
              OR u.last_name  ILIKE :prefix
@@ -141,6 +152,7 @@ async function searchEmployees(companyId, q) {
       fullName: [row.firstName, row.lastName].filter(Boolean).join(" "),
       email: row.email,
       role: row.role,
+      salary: row.salary === null ? null : Number(row.salary),
     }));
   } catch (error) {
     logger.error("Employee search for payroll failed", {

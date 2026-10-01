@@ -82,9 +82,32 @@ const searchEmployeesQuerySchema = Joi.object({
   }),
 });
 
+// Salary structure: set / update one employee's salary (PUT body)
+const setSalarySchema = Joi.object({
+  userUuid: Joi.string().guid().required().messages({
+    "any.required": "Select an employee",
+    "string.empty": "Select an employee",
+    "string.guid": "Select an employee from the suggestions",
+  }),
+
+  salary: money().greater(0).required().label("Salary").messages({
+    "number.greater": "Salary must be more than 0",
+  }),
+})
+  .required()
+  .messages({ "any.required": "Request body is required" })
+  .prefs({ errors: { wrap: { label: false } } });
+
+// Salary structure list (GET query string) — optional exact employee
+const listSalariesQuerySchema = Joi.object({
+  userUuid: Joi.string().guid().messages({ "string.guid": "Invalid employee" }),
+});
+
 module.exports = {
   PAYMENT_METHODS,
   createPayrollSchema,
   listPayrollQuerySchema,
   searchEmployeesQuerySchema,
+  setSalarySchema,
+  listSalariesQuerySchema,
 };
