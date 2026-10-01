@@ -34,6 +34,11 @@ module.exports = {
         defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
       },
     });
+
+    await queryInterface.sequelize.query(`
+      INSERT INTO companies (name)
+      VALUES ('Hawk''N Technologies');
+    `);
   },
 
   async down(queryInterface) {

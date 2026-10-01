@@ -21,14 +21,6 @@ module.exports = {
         type: Sequelize.INTEGER,
         allowNull: false,
         unique: true,
-
-        references: {
-          table: "companies",
-          field: "id",
-        },
-
-        onDelete: "CASCADE",
-        onUpdate: "CASCADE",
       },
 
       official_company_name: {
@@ -67,6 +59,18 @@ module.exports = {
         allowNull: false,
         defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
       },
+    });
+
+    await queryInterface.addConstraint("company_profiles", {
+      fields: ["company_id"],
+      type: "foreign key",
+      name: "fk_company_profiles_company",
+      references: {
+        table: "companies",
+        field: "id",
+      },
+      onDelete: "CASCADE",
+      onUpdate: "CASCADE",
     });
   },
 
