@@ -291,6 +291,25 @@ CREATE INDEX idx_payrolls_company_period ON payrolls (company_id, pay_period);
 
 
 
+CREATE TABLE company_holidays (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    company_id INTEGER NOT NULL,
+    holiday_date DATE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    is_paid BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_company_holidays_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+    CONSTRAINT uq_company_holiday
+        UNIQUE (company_id, holiday_date)
+);
+
+
+
 CREATE TABLE employee_salaries (
     id SERIAL PRIMARY KEY,
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),

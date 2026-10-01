@@ -2,6 +2,13 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const exists = await queryInterface.tableExists("company_profiles");
+
+    if (exists) {
+      console.log("company_profiles table already exists. Skipping migration.");
+      return;
+    }
+
     await queryInterface.createTable("company_profiles", {
       id: {
         type: Sequelize.INTEGER,
@@ -75,6 +82,13 @@ module.exports = {
   },
 
   async down(queryInterface) {
+    const exists = await queryInterface.tableExists("company_profiles");
+
+    if (!exists) {
+      console.log("company_profiles table does not exist. Skipping rollback.");
+      return;
+    }
+
     await queryInterface.dropTable("company_profiles");
   },
 };

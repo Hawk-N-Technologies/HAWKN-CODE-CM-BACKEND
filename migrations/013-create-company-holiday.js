@@ -2,14 +2,14 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const exists = await queryInterface.tableExists("users");
+    const exists = await queryInterface.tableExists("company_holidays");
 
     if (exists) {
-      console.log("users table already exists. Skipping migration.");
+      console.log("company_holidays table already exists. Skipping migration.");
       return;
     }
 
-    await queryInterface.createTable("users", {
+    await queryInterface.createTable("company_holidays", {
       id: {
         type: Sequelize.INTEGER,
         primaryKey: true,
@@ -27,50 +27,25 @@ module.exports = {
       company_id: {
         type: Sequelize.INTEGER,
         allowNull: false,
-
         references: {
           table: "companies",
           field: "id",
         },
-
         onDelete: "CASCADE",
         onUpdate: "CASCADE",
       },
 
-      role_id: {
-        type: Sequelize.INTEGER,
-        allowNull: false,
-
-        references: {
-          table: "roles",
-          field: "id",
-        },
-
-        onDelete: "RESTRICT",
-        onUpdate: "CASCADE",
-      },
-
-      first_name: {
-        type: Sequelize.STRING(100),
+      holiday_date: {
+        type: Sequelize.DATEONLY,
         allowNull: false,
       },
 
-      last_name: {
-        type: Sequelize.STRING(100),
-        allowNull: true,
-      },
-
-      email: {
+      name: {
         type: Sequelize.STRING(255),
         allowNull: false,
       },
 
-      password_hash: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-
-      is_active: {
+      is_paid: {
         type: Sequelize.BOOLEAN,
         allowNull: false,
         defaultValue: true,
@@ -89,21 +64,22 @@ module.exports = {
       },
     });
 
-    await queryInterface.sequelize.query(`
-      ALTER TABLE "users"
-      ADD CONSTRAINT "uq_users_company_email"
-      UNIQUE ("company_id", "email");
-    `);
+    // Prevent duplicate holidays for the same company/date
+    await queryInterface.addConstraint("company_holidays", {
+      fields: ["company_id", "holiday_date"],
+      type: "unique",
+      name: "uq_company_holiday",
+    });
   },
 
   async down(queryInterface) {
-    const exists = await queryInterface.tableExists("users");
+    const exists = await queryInterface.tableExists("company_holidays");
 
     if (!exists) {
-      console.log("users table does not exist. Skipping rollback.");
+      console.log("company_holidays table does not exist. Skipping rollback.");
       return;
     }
 
-    await queryInterface.dropTable("users");
+    await queryInterface.dropTable("company_holidays");
   },
 };
