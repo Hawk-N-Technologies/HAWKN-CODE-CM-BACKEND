@@ -5,7 +5,11 @@ const authenticate = require("../middleware/authenticate");
 const router = express.Router();
 
 router.post("/login", authController.login);
-router.get("/me", authenticate(["admin", "hr", "bde"]), authController.getMe);
+router.get(
+  "/me",
+  authenticate(["admin", "hr", "bde", "developer"]),
+  authController.getMe,
+);
 router.post("/logout", authController.logout);
 
 module.exports = router;

@@ -23,7 +23,6 @@ function authenticate(allowedRoles) {
       }
 
       req.user = decoded;
-
       // Role authorization
       if (
         Array.isArray(allowedRoles) &&
