@@ -77,7 +77,7 @@ const getPayrollCalculation = async (req, res, next) => {
 
     const companyId = req.user.companyId;
 
-    const result = await employeeSalaryService.previewPayroll({
+    const result = await employeeSalaryService.calculatePayroll({
       companyId,
       userUuid,
       payPeriod,
