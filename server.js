@@ -15,12 +15,9 @@ const attendanceRoutes = require("./routes/attendanceRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
 const employeeOnboardingRoutes = require("./routes/employeeOnboardingRoutes");
 const companyHolidayRoutes = require("./routes/companyHolidayRoutes");
-<<<<<<< HEAD
 const employeeLeaveRoutes = require("./routes/employeeLeaveRoutes");
-=======
 const bonusRoutes = require("./routes/bonusRoutes");
 const incrementRoutes = require("./routes/incrementRoutes");
->>>>>>> feature/bonuses-increments
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
