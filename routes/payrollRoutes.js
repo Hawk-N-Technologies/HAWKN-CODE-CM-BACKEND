@@ -7,6 +7,7 @@ const validate = require("../middleware/validate");
 const validateQuery = require("../middleware/validateQuery");
 const {
   createPayrollSchema,
+  updatePayrollSchema,
   listPayrollQuerySchema,
   searchEmployeesQuerySchema,
   setSalarySchema,
@@ -63,6 +64,12 @@ router.post(
   validate(createPayrollSchema),
   payrollController.createPayroll,
 );
+
+// Edit a Pending payroll (amounts + payment method only)
+router.put("/:uuid", validate(updatePayrollSchema), payrollController.updatePayroll);
+
+// Delete a Pending payroll
+router.delete("/:uuid", payrollController.deletePayroll);
 
 // Pending → Processed (locks the record)
 router.patch("/:uuid/process", payrollController.processPayroll);
