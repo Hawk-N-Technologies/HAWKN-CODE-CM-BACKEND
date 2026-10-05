@@ -2,6 +2,10 @@ const Attendance = require("../models/Attendance");
 const Employee = require("../models/Employee");
 const sequelize = require("../config/db");
 const User = require("../models/User");
+const { Op } = require("@sequelize/core");
+const logger = require("../utils/logger");
+const EmployeeLeave = require("../models/EmployeeLeave");
+const CompanyHoliday = require("../models/CompanyHoliday");
 
 const INDIA_TIMEZONE = "Asia/Kolkata";
 
@@ -95,14 +99,58 @@ async function markAttendance(userId, companyId) {
       throw new Error("Employee not found.");
     }
 
-    // Always calculate attendance date using India timezone.
     const attendanceDate = getAttendanceDate();
-
-    // Always calculate session using India timezone.
     const session = getAttendanceSession();
 
     if (!session) {
       throw new Error("Attendance cannot be marked at this time.");
+    }
+
+    const holiday = await CompanyHoliday.findOne({
+      where: {
+        companyId,
+        holiday_date: attendanceDate,
+      },
+      transaction,
+    });
+
+    if (holiday) {
+      throw new Error(
+        `Attendance cannot be marked because today is a holiday: ${
+          holiday.name || "Holiday"
+        }.`,
+      );
+    }
+
+    const leave = await EmployeeLeave.findOne({
+      where: {
+        employeeId: employee.id,
+        companyId,
+        leaveDate: attendanceDate,
+        leaveStatus: "APPROVED",
+        [Op.or]: [{ leaveSession: "FULL_DAY" }, { leaveSession: session }],
+      },
+      transaction,
+    });
+
+    if (leave) {
+      if (leave.leaveSession === "FULL_DAY") {
+        throw new Error(
+          "Attendance cannot be marked because you are on full-day leave today.",
+        );
+      }
+
+      if (leave.leaveSession === "FIRST_HALF") {
+        throw new Error(
+          "Attendance cannot be marked because you are on first-half leave.",
+        );
+      }
+
+      if (leave.leaveSession === "SECOND_HALF") {
+        throw new Error(
+          "Attendance cannot be marked because you are on second-half leave.",
+        );
+      }
     }
 
     const existingAttendance = await Attendance.findOne({
@@ -140,11 +188,7 @@ async function markAttendance(userId, companyId) {
         companyId,
         attendanceDate,
         session,
-
-        // This is an actual timestamp.
-        // PostgreSQL/Sequelize can store the current instant.
         checkIn: new Date(),
-
         status: "Present",
       },
       {
@@ -198,7 +242,143 @@ async function getCompanyTodayAttendance(companyId) {
   return attendance;
 }
 
+async function getAttendanceHistory(companyId, options = {}) {
+  try {
+    if (!companyId) {
+      const error = new Error("Company ID is required");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const { page = 1, limit = 10, from, to, search = "", employeeId } = options;
+
+    const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
+
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    const where = {
+      companyId: Number(companyId),
+    };
+
+    if (from || to) {
+      where.attendanceDate = {};
+
+      if (from) {
+        where.attendanceDate[Op.gte] = from;
+      }
+
+      if (to) {
+        where.attendanceDate[Op.lte] = to;
+      }
+    }
+
+    if (employeeId) {
+      where.employeeId = Number(employeeId);
+    }
+
+    const trimmedSearch = typeof search === "string" ? search.trim() : "";
+
+    const employeeInclude = {
+      model: Employee,
+      as: "employee",
+      required: false,
+      include: [
+        {
+          model: User,
+          as: "user",
+          required: false,
+          attributes: ["id", "uuid", "firstName", "lastName", "email"],
+        },
+      ],
+    };
+
+    if (trimmedSearch) {
+      employeeInclude.required = true;
+      employeeInclude.include[0].required = true;
+
+      employeeInclude.include[0].where = {
+        [Op.or]: [
+          {
+            firstName: {
+              [Op.iLike]: `%${trimmedSearch}%`,
+            },
+          },
+          {
+            lastName: {
+              [Op.iLike]: `%${trimmedSearch}%`,
+            },
+          },
+          {
+            email: {
+              [Op.iLike]: `%${trimmedSearch}%`,
+            },
+          },
+        ],
+      };
+    }
+
+    console.log("ATTENDANCE HISTORY OPTIONS:", {
+      from,
+      to,
+      employeeId,
+      search: trimmedSearch,
+    });
+
+    console.log("ATTENDANCE WHERE:", where);
+
+    const { rows, count } = await Attendance.findAndCountAll({
+      where,
+      include: [employeeInclude],
+
+      order: [
+        ["attendanceDate", "DESC"],
+        ["session", "ASC"],
+        ["id", "DESC"],
+      ],
+
+      limit: parsedLimit,
+      offset,
+      distinct: true,
+    });
+
+    const records = rows.map((row) => row.toJSON());
+
+    const totalPages = Math.ceil(count / parsedLimit);
+
+    return {
+      records,
+
+      pagination: {
+        page: parsedPage,
+        limit: parsedLimit,
+        total: count,
+        totalPages,
+        hasNextPage: parsedPage < totalPages,
+        hasPreviousPage: parsedPage > 1,
+      },
+
+      filters: {
+        from: from || null,
+        to: to || null,
+        search: trimmedSearch,
+        employeeId: employeeId || null,
+      },
+    };
+  } catch (error) {
+    logger.error("Failed to fetch attendance history", {
+      companyId,
+      options,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    throw error;
+  }
+}
+
 module.exports = {
   markAttendance,
   getCompanyTodayAttendance,
+  getAttendanceHistory,
 };
