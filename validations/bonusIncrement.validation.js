@@ -47,6 +47,20 @@ const createBonusSchema = Joi.object({
   .messages({ "any.required": "Request body is required" })
   .prefs({ errors: { wrap: { label: false } } });
 
+// Edit the latest increment. Employee + previous salary are fixed.
+const updateIncrementSchema = Joi.object({
+  newSalary: money().required().label("New salary"),
+  effectiveDate: Joi.date().iso().required().messages({
+    "date.base": "Effective date must be a valid date",
+    "date.format": "Effective date must be YYYY-MM-DD",
+    "any.required": "Effective date is required",
+  }),
+  reason: reason(),
+})
+  .required()
+  .messages({ "any.required": "Request body is required" })
+  .prefs({ errors: { wrap: { label: false } } });
+
 const listBonusesQuerySchema = Joi.object({
   userUuid: Joi.string().guid().messages({ "string.guid": "Invalid employee" }),
 });
@@ -83,5 +97,6 @@ module.exports = {
   listBonusesQuerySchema,
   bonusTotalQuerySchema,
   createIncrementSchema,
+  updateIncrementSchema,
   listIncrementsQuerySchema,
 };

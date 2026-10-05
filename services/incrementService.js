@@ -12,7 +12,12 @@ function httpError(statusCode, message) {
 }
 
 const roundMoney = (value) => Math.round(Number(value) * 100) / 100;
-const formatInr = (value) => `₹${Number(value).toLocaleString("en-IN")}`;
+// ₹60,000 / ₹60,000.50 (never "₹60,000.5")
+const formatInr = (value) => {
+  const amount = Number(value);
+  const decimals = Number.isInteger(amount) ? 0 : 2;
+  return `₹${amount.toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: 2 })}`;
+};
 
 // Today in India as "YYYY-MM-DD" (the company works in IST)
 const todayIst = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -150,6 +155,94 @@ async function createIncrement(companyId, createdByUserId, data) {
 }
 
 /**
+ * Shared guard for Edit + Revert: the increment must be this employee's
+ * LATEST one, and Salary Structure must still show its new salary
+ * (nobody changed the salary since). Locks the employee row.
+ */
+async function lockEditableIncrement(uuid, companyId, transaction) {
+  const [increment] = await sequelize.query(
+    `SELECT i.id, i.employee_id AS "employeeId", i.previous_salary AS "previousSalary",
+            i.new_salary AS "newSalary"
+       FROM salary_increments i
+       JOIN employees e ON e.id = i.employee_id
+      WHERE i.uuid = :uuid
+        AND e.company_id = :companyId
+      FOR UPDATE OF e`,
+    { replacements: { uuid, companyId }, type: QueryTypes.SELECT, transaction },
+  );
+  if (!increment) throw httpError(404, "Increment not found");
+
+  const [latest] = await sequelize.query(
+    `SELECT MAX(id) AS "maxId" FROM salary_increments WHERE employee_id = :employeeId`,
+    { replacements: { employeeId: increment.employeeId }, type: QueryTypes.SELECT, transaction },
+  );
+  if (Number(latest.maxId) !== Number(increment.id)) {
+    throw httpError(409, "Only the latest increment can be changed");
+  }
+
+  const [salary] = await sequelize.query(
+    `SELECT id, salary FROM employee_salaries WHERE employee_id = :employeeId`,
+    { replacements: { employeeId: increment.employeeId }, type: QueryTypes.SELECT, transaction },
+  );
+  if (!salary || Number(salary.salary) !== Number(increment.newSalary)) {
+    throw httpError(409, "Salary was changed after this increment — it can't be changed automatically");
+  }
+
+  return { increment, salary };
+}
+
+/**
+ * Edit the latest increment: new salary / effective date / reason.
+ * Previous salary stays fixed; Salary Structure is updated in the same
+ * transaction so the two never disagree.
+ */
+async function updateIncrement(uuid, companyId, data) {
+  const effectiveDate = toDateString(data.effectiveDate);
+  if (effectiveDate > todayIst()) {
+    throw httpError(400, "Effective date can't be in the future");
+  }
+
+  try {
+    await sequelize.transaction(async (transaction) => {
+      const { increment, salary } = await lockEditableIncrement(uuid, companyId, transaction);
+
+      const previousSalary = Number(increment.previousSalary);
+      const newSalary = roundMoney(data.newSalary);
+      if (newSalary <= previousSalary) {
+        throw httpError(400, `New salary must be higher than the previous salary (${formatInr(previousSalary)})`);
+      }
+
+      await sequelize.query(
+        `UPDATE salary_increments
+            SET new_salary = :newSalary, effective_date = :effectiveDate, reason = :reason
+          WHERE id = :id`,
+        {
+          replacements: {
+            newSalary,
+            effectiveDate,
+            reason: data.reason ? data.reason.trim() || null : null,
+            id: increment.id,
+          },
+          transaction,
+        },
+      );
+
+      await sequelize.query(`UPDATE employee_salaries SET salary = :newSalary WHERE id = :id`, {
+        replacements: { newSalary, id: salary.id },
+        transaction,
+      });
+    });
+
+    logger.info("Increment updated", { companyId, incrementUuid: uuid });
+    const [updated] = (await listIncrements(companyId)).filter((i) => i.uuid === uuid);
+    return updated;
+  } catch (error) {
+    logger.error("Failed to update increment", { companyId, incrementUuid: uuid, error: error.message });
+    throw error;
+  }
+}
+
+/**
  * Revert = undo a mistaken increment. Only the LATEST increment of an
  * employee, and only if their salary hasn't been changed since
  * (Salary Structure still shows this increment's new salary).
@@ -157,33 +250,7 @@ async function createIncrement(companyId, createdByUserId, data) {
 async function revertIncrement(uuid, companyId) {
   try {
     await sequelize.transaction(async (transaction) => {
-      const [increment] = await sequelize.query(
-        `SELECT i.id, i.employee_id AS "employeeId", i.previous_salary AS "previousSalary",
-                i.new_salary AS "newSalary"
-           FROM salary_increments i
-           JOIN employees e ON e.id = i.employee_id
-          WHERE i.uuid = :uuid
-            AND e.company_id = :companyId
-          FOR UPDATE OF e`,
-        { replacements: { uuid, companyId }, type: QueryTypes.SELECT, transaction },
-      );
-      if (!increment) throw httpError(404, "Increment not found");
-
-      const [latest] = await sequelize.query(
-        `SELECT MAX(id) AS "maxId" FROM salary_increments WHERE employee_id = :employeeId`,
-        { replacements: { employeeId: increment.employeeId }, type: QueryTypes.SELECT, transaction },
-      );
-      if (Number(latest.maxId) !== Number(increment.id)) {
-        throw httpError(409, "Only the latest increment can be reverted");
-      }
-
-      const [salary] = await sequelize.query(
-        `SELECT id, salary FROM employee_salaries WHERE employee_id = :employeeId`,
-        { replacements: { employeeId: increment.employeeId }, type: QueryTypes.SELECT, transaction },
-      );
-      if (!salary || Number(salary.salary) !== Number(increment.newSalary)) {
-        throw httpError(409, "Salary was changed after this increment — it can't be reverted automatically");
-      }
+      const { increment, salary } = await lockEditableIncrement(uuid, companyId, transaction);
 
       await sequelize.query(`UPDATE employee_salaries SET salary = :previous WHERE id = :id`, {
         replacements: { previous: increment.previousSalary, id: salary.id },
@@ -205,5 +272,6 @@ async function revertIncrement(uuid, companyId) {
 module.exports = {
   listIncrements,
   createIncrement,
+  updateIncrement,
   revertIncrement,
 };
