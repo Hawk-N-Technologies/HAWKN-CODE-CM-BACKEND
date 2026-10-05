@@ -135,9 +135,6 @@ module.exports = {
   searchEmployeesQuerySchema,
   setSalarySchema,
   listSalariesQuerySchema,
-<<<<<<< HEAD
   updatePayrollSchema
 };
-=======
-};
->>>>>>> feature/bonuses-increments
+
