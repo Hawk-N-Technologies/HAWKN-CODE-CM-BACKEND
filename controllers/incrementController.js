@@ -29,6 +29,28 @@ async function createIncrement(req, res, next) {
   }
 }
 
+async function updateIncrement(req, res, next) {
+  try {
+    if (uuidSchema.validate(req.params.uuid).error) {
+      return res.status(400).json({ success: false, message: "Invalid increment ID" });
+    }
+
+    const record = await incrementService.updateIncrement(req.params.uuid, req.user.companyId, req.body);
+    return res.status(200).json({
+      success: true,
+      message: "Increment updated — salary updated",
+      data: record,
+    });
+  } catch (error) {
+    logger.error("Update increment controller failed", {
+      userId: req.user?.userId,
+      incrementUuid: req.params.uuid,
+      error: error.message,
+    });
+    return next(error);
+  }
+}
+
 async function revertIncrement(req, res, next) {
   try {
     if (uuidSchema.validate(req.params.uuid).error) {
@@ -55,4 +77,5 @@ module.exports = {
   listIncrements,
   createIncrement,
   revertIncrement,
+  updateIncrement,
 };
