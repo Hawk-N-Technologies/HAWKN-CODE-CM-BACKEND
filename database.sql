@@ -323,3 +323,116 @@ CREATE TABLE employee_salaries (
     CONSTRAINT chk_employee_salaries_salary_positive
         CHECK (salary > 0)
 );
+
+
+
+CREATE TABLE employee_leaves (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    employee_id INTEGER NOT NULL,
+    company_id INTEGER NOT NULL,
+    leave_date DATE NOT NULL,
+    leave_type VARCHAR(30) NOT NULL,
+    leave_session VARCHAR(20) NOT NULL DEFAULT 'FULL_DAY',
+    leave_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    -- NULL while PENDING or REJECTED
+    -- TRUE/FALSE after HR approves
+    is_paid BOOLEAN,
+    reason TEXT,
+    reviewed_by INTEGER,
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_employee_leave_employee
+        FOREIGN KEY (employee_id)
+        REFERENCES employees(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_employee_leave_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_employee_leave_reviewer
+        FOREIGN KEY (reviewed_by)
+        REFERENCES users(id)
+        ON DELETE SET NULL,
+    CONSTRAINT chk_employee_leave_status
+        CHECK (
+            leave_status IN (
+                'PENDING',
+                'APPROVED',
+                'REJECTED'
+            )
+        ),
+    CONSTRAINT chk_employee_leave_type
+        CHECK (
+            leave_type IN (
+                'CASUAL',
+                'SICK',
+                'ANNUAL',
+                'UNPAID',
+                'OTHER'
+            )
+        ),
+    CONSTRAINT chk_employee_leave_session
+        CHECK (
+            leave_session IN (
+                'FULL_DAY',
+                'FIRST_HALF',
+                'SECOND_HALF'
+            )
+        )
+);
+
+
+
+
+
+CREATE TABLE employee_bonuses (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    company_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    pay_period DATE NOT NULL,
+    bonus_type VARCHAR(30) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    reason TEXT,
+    created_by INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_employee_bonuses_company
+        FOREIGN KEY (company_id) REFERENCES companies(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_employee_bonuses_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_employee_bonuses_created_by
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT chk_employee_bonuses_amount_positive CHECK (amount > 0),
+    CONSTRAINT chk_employee_bonuses_period_first_of_month CHECK (EXTRACT(DAY FROM pay_period) = 1),
+    CONSTRAINT chk_employee_bonuses_type
+        CHECK (bonus_type IN ('Performance', 'Festival', 'Referral', 'Joining', 'Other'))
+);
+CREATE INDEX idx_employee_bonuses_user_period ON employee_bonuses (company_id, user_id, pay_period);
+
+CREATE TABLE salary_increments (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    employee_id INTEGER NOT NULL,
+    previous_salary NUMERIC(12,2) NOT NULL,
+    new_salary NUMERIC(12,2) NOT NULL,
+    effective_date DATE NOT NULL,
+    reason TEXT,
+    created_by INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_salary_increments_employee
+        FOREIGN KEY (employee_id) REFERENCES employees(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_salary_increments_created_by
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT chk_salary_increments_previous_positive CHECK (previous_salary > 0),
+    CONSTRAINT chk_salary_increments_is_increase CHECK (new_salary > previous_salary)
+);
+CREATE INDEX idx_salary_increments_employee ON salary_increments (employee_id);
+

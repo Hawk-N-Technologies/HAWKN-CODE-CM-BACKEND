@@ -29,7 +29,10 @@ async function searchEmployees(req, res, next) {
 
 async function listSalaries(req, res, next) {
   try {
-    const records = await employeeSalaryService.listSalaries(req.user.companyId, req.validatedQuery);
+    const records = await employeeSalaryService.listSalaries(
+      req.user.companyId,
+      req.validatedQuery,
+    );
 
     return res.status(200).json({
       success: true,
@@ -47,11 +50,16 @@ async function listSalaries(req, res, next) {
 
 async function setSalary(req, res, next) {
   try {
-    const { record, created } = await employeeSalaryService.setSalary(req.user.companyId, req.body);
+    const { record, created } = await employeeSalaryService.setSalary(
+      req.user.companyId,
+      req.body,
+    );
 
     return res.status(created ? 201 : 200).json({
       success: true,
-      message: created ? "Salary added successfully" : "Salary updated successfully",
+      message: created
+        ? "Salary added successfully"
+        : "Salary updated successfully",
       data: record,
     });
   } catch (error) {
@@ -63,8 +71,32 @@ async function setSalary(req, res, next) {
   }
 }
 
+const getPayrollCalculation = async (req, res, next) => {
+  try {
+    const { userUuid, payPeriod } = req.body;
+
+    const companyId = req.user.companyId;
+
+    const result = await employeeSalaryService.previewPayroll({
+      companyId,
+      userUuid,
+      payPeriod,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Failed to calculate payroll:", error);
+
+    return next(error);
+  }
+};
+
 module.exports = {
   searchEmployees,
   listSalaries,
   setSalary,
+  getPayrollCalculation,
 };
