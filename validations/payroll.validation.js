@@ -130,9 +130,14 @@ const listSalariesQuerySchema = Joi.object({
 module.exports = {
   PAYMENT_METHODS,
   createPayrollSchema,
+  updatePayrollSchema,
   listPayrollQuerySchema,
   searchEmployeesQuerySchema,
   setSalarySchema,
   listSalariesQuerySchema,
+<<<<<<< HEAD
   updatePayrollSchema
 };
+=======
+};
+>>>>>>> feature/bonuses-increments

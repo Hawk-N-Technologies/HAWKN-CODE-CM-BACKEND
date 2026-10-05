@@ -71,6 +71,12 @@ router.put("/:uuid", validate(updatePayrollSchema), payrollController.updatePayr
 // Delete a Pending payroll
 router.delete("/:uuid", payrollController.deletePayroll);
 
+// Edit a Pending payroll (amounts + payment method only)
+router.put("/:uuid", validate(updatePayrollSchema), payrollController.updatePayroll);
+
+// Delete a Pending payroll
+router.delete("/:uuid", payrollController.deletePayroll);
+
 // Pending → Processed (locks the record)
 router.patch("/:uuid/process", payrollController.processPayroll);
 router.post("/calculate", employeeSalaryController.getPayrollCalculation);
