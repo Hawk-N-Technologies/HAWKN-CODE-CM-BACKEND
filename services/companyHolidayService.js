@@ -1,3 +1,4 @@
+const Attendance = require("../models/Attendance");
 const CompanyHoliday = require("../models/CompanyHoliday");
 const logger = require("../utils/logger");
 
@@ -29,7 +30,42 @@ async function createHoliday(companyId, data) {
       throw error;
     }
 
-    // Check duplicate holiday for the same company/date
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (!dateRegex.test(holidayDate)) {
+      const error = new Error("Invalid holiday date format");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date().toISOString().split("T")[0];
+
+    // Do not allow past holidays
+    if (holidayDate < today) {
+      const error = new Error("Holiday date cannot be in the past");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (holidayDate === today) {
+      const existingAttendance = await Attendance.findOne({
+        where: {
+          companyId,
+          attendanceDate: today,
+        },
+      });
+
+      if (existingAttendance) {
+        const error = new Error(
+          "A holiday cannot be created for today because attendance has already been marked.",
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+    // Check duplicate holiday for same company/date
     const existingHoliday = await CompanyHoliday.findOne({
       where: {
         companyId,
@@ -111,7 +147,69 @@ async function getAllHolidays(companyId) {
   }
 }
 
+async function deleteHoliday(companyId, uuid) {
+  try {
+    if (!companyId) {
+      const error = new Error("Company ID is required");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!uuid) {
+      const error = new Error("Holiday UUID is required");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const holiday = await CompanyHoliday.findOne({
+      where: {
+        companyId,
+        uuid,
+      },
+    });
+
+    if (!holiday) {
+      const error = new Error("Company holiday not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Get today's date as YYYY-MM-DD
+    const today = new Date().toISOString().split("T")[0];
+
+    // Prevent deletion of past holidays
+    if (holiday.holidayDate < today) {
+      const error = new Error("Past holidays cannot be deleted");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await holiday.destroy();
+
+    logger.info("Company holiday deleted successfully", {
+      holidayUuid: uuid,
+      holidayId: holiday.id,
+      companyId,
+    });
+
+    return {
+      uuid,
+      message: "Company holiday deleted successfully",
+    };
+  } catch (error) {
+    logger.error("Failed to delete company holiday", {
+      companyId,
+      holidayUuid: uuid,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    throw error;
+  }
+}
+
 module.exports = {
   createHoliday,
   getAllHolidays,
+  deleteHoliday,
 };

@@ -27,7 +27,8 @@ async function getTodayAttendance(req, res) {
   try {
     const companyId = req.user.companyId;
 
-    const attendance = await attendanceService.getCompanyTodayAttendance(companyId);
+    const attendance =
+      await attendanceService.getCompanyTodayAttendance(companyId);
 
     return res.status(200).json({
       success: true,
@@ -41,7 +42,41 @@ async function getTodayAttendance(req, res) {
   }
 }
 
+async function getAttendanceHistory(req, res) {
+  try {
+    const companyId = req.user.companyId;
+
+    const result = await attendanceService.getAttendanceHistory(companyId, {
+      page: req.query.page,
+      limit: req.query.limit,
+      from: req.query.from,
+      to: req.query.to,
+      search: req.query.search,
+      employeeId: req.query.employeeId,
+    });
+
+    console.log("CONTROLLER RECORDS:", result.records.length);
+    console.log("CONTROLLER PAGINATION:", result.pagination);
+
+    return res.status(200).json({
+      success: true,
+      message: "Attendance history fetched successfully.",
+      data: result.records,
+      pagination: result.pagination,
+      filters: result.filters,
+    });
+  } catch (error) {
+    console.error("Get attendance history error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to fetch attendance history.",
+    });
+  }
+}
+
 module.exports = {
   markAttendance,
   getTodayAttendance,
+  getAttendanceHistory,
 };
