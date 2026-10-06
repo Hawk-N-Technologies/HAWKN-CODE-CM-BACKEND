@@ -7,6 +7,11 @@
  */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const exists = await queryInterface.tableExists("employee_bonuses");
+    if (exists) {
+      console.log("employee_bonuses already exist");
+      return;
+    }
     await queryInterface.createTable("employee_bonuses", {
       id: {
         type: Sequelize.INTEGER,

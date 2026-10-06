@@ -2,6 +2,18 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const tables = await queryInterface.showAllTables();
+
+    const tableExists = tables.some(
+      (table) =>
+        (typeof table === "string" ? table : table.tableName)?.toLowerCase() ===
+        "attendances",
+    );
+
+    if (tableExists) {
+      return;
+    }
+
     await queryInterface.createTable("attendances", {
       id: {
         type: Sequelize.INTEGER,

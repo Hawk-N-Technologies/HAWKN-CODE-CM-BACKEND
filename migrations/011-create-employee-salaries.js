@@ -7,6 +7,12 @@
  */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const exists = await queryInterface.tableExists("employee_salaries");
+
+    if (exists) {
+      return;
+    }
+
     await queryInterface.createTable("employee_salaries", {
       id: {
         type: Sequelize.INTEGER,
@@ -27,7 +33,10 @@ module.exports = {
         type: Sequelize.INTEGER,
         allowNull: false,
         unique: true,
-        references: { table: "employees", field: "id" },
+        references: {
+          table: "employees",
+          field: "id",
+        },
         onDelete: "CASCADE",
         onUpdate: "CASCADE",
       },

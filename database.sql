@@ -436,3 +436,40 @@ CREATE TABLE salary_increments (
 );
 CREATE INDEX idx_salary_increments_employee ON salary_increments (employee_id);
 
+CREATE TABLE internship_probation_periods (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    company_id INTEGER NOT NULL,
+    employee_id INTEGER NOT NULL,
+    period_type VARCHAR(20) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    original_end_date DATE NOT NULL,
+    extension_count INTEGER NOT NULL DEFAULT 0,
+    stipend NUMERIC(12,2),
+    performance VARCHAR(30) NOT NULL DEFAULT 'Pending',
+    notes TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'Active',
+    closed_at TIMESTAMP WITH TIME ZONE,
+    created_by INTEGER,
+    closed_by INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ipp_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_ipp_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_ipp_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT fk_ipp_closed_by FOREIGN KEY (closed_by) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT chk_ipp_type CHECK (period_type IN ('Internship', 'Probation')),
+    CONSTRAINT chk_ipp_status CHECK (status IN ('Active', 'Confirmed', 'Converted', 'Ended', 'Terminated')),
+    CONSTRAINT chk_ipp_performance CHECK (performance IN ('Pending', 'Needs Improvement', 'Good', 'Excellent')),
+    CONSTRAINT chk_ipp_dates CHECK (end_date > start_date AND original_end_date > start_date),
+    CONSTRAINT chk_ipp_extension CHECK (extension_count >= 0 AND end_date >= original_end_date),
+    CONSTRAINT chk_ipp_stipend CHECK (stipend IS NULL OR (period_type = 'Internship' AND stipend >= 0)),
+    CONSTRAINT chk_ipp_converted_only_internship CHECK (status NOT IN ('Converted', 'Ended') OR period_type = 'Internship'),
+    CONSTRAINT chk_ipp_closed_consistency CHECK ((status = 'Active') = (closed_at IS NULL))
+);
+-- Only ONE active period per employee
+CREATE UNIQUE INDEX uq_ipp_one_active_per_employee
+    ON internship_probation_periods (employee_id) WHERE status = 'Active';
+CREATE INDEX idx_ipp_company_status_end
+    ON internship_probation_periods (company_id, status, end_date);
