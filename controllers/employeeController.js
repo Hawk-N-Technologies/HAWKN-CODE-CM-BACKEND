@@ -198,8 +198,6 @@ async function createPerson(req, res) {
   try {
     const companyId = req.user.companyId;
 
-    console.log(req.body);
-    return;
     const person = await employeeService.createPerson(req.body, companyId);
 
     return res.status(201).json({
