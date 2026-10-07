@@ -168,4 +168,169 @@ async function updateLeaveRequest(companyId, uuid, data) {
   }
 }
 
-module.exports = { getLeaveRequests, updateLeaveRequest };
+const createLeaveRequest = async ({
+  userId,
+  companyId,
+  leaveDate,
+  leaveType,
+  leaveSession = "FULL_DAY",
+  reason,
+}) => {
+  console.log(leaveDate);
+  // Check employee
+  const employee = await Employee.findOne({
+    where: {
+      userId,
+      companyId,
+    },
+  });
+
+  if (!employee) {
+    throw new Error("Employee not found");
+  }
+
+  // Check existing leave
+  const existingLeaves = await EmployeeLeave.findAll({
+    where: {
+      employee_id: employee.id,
+      company_id: companyId,
+      leave_date: leaveDate,
+      leave_status: ["PENDING", "APPROVED"],
+    },
+  });
+
+  for (const leave of existingLeaves) {
+    // Full day conflicts with everything
+    if (leave.leave_session === "FULL_DAY" || leaveSession === "FULL_DAY") {
+      throw new Error("Leave already exists for this date");
+    }
+
+    // Same half-day conflicts
+    if (leave.leave_session === leaveSession) {
+      throw new Error(`Leave already exists for ${leaveSession}`);
+    }
+
+    // FIRST_HALF + SECOND_HALF is allowed
+  }
+  console.log(employee, companyId);
+
+  const leave = await EmployeeLeave.create({
+    employeeId: employee.id,
+    companyId,
+    leaveDate,
+    leaveType,
+    leaveSession,
+    leaveStatus: "PENDING",
+    isPaid: null,
+    reason: reason || null,
+  });
+
+  return leave;
+};
+
+/////
+
+////
+///
+////
+const getMyLeaves = async ({ userId, companyId, tab }) => {
+  const employee = await Employee.findOne({
+    where: {
+      userId,
+      companyId,
+    },
+    attributes: ["id"],
+  });
+
+  if (!employee) {
+    throw new Error("Employee not found.");
+  }
+
+  // YYYY-MM-DD
+  const today = new Date();
+
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  const todayDate = `${year}-${month}-${day}`;
+
+  let where = {
+    employeeId: employee.id,
+    companyId,
+  };
+
+  if (tab === "PENDING") {
+    where = {
+      ...where,
+
+      leaveStatus: "PENDING",
+
+      leaveDate: {
+        [Op.gte]: todayDate,
+      },
+    };
+  } else if (tab === "HISTORY") {
+    where = {
+      ...where,
+
+      [Op.or]: [
+        // All approved
+        {
+          leaveStatus: "APPROVED",
+        },
+
+        // All rejected
+        {
+          leaveStatus: "REJECTED",
+        },
+
+        // Pending leave whose date has passed
+        {
+          leaveStatus: "PENDING",
+
+          leaveDate: {
+            [Op.lt]: todayDate,
+          },
+        },
+      ],
+    };
+  } else {
+    throw new Error("Invalid tab. Use PENDING or HISTORY.");
+  }
+
+  const leaves = await EmployeeLeave.findAll({
+    where,
+
+    attributes: [
+      "id",
+      "uuid",
+      "employeeId",
+      "companyId",
+      "leaveDate",
+      "leaveType",
+      "leaveSession",
+      "leaveStatus",
+      "isPaid",
+      "reason",
+      "reviewedBy",
+      "reviewedAt",
+      "createdAt",
+      "updatedAt",
+    ],
+
+    order: [
+      ["leaveDate", "DESC"],
+      ["createdAt", "DESC"],
+    ],
+  });
+
+  return leaves;
+};
+
+module.exports = {
+  getLeaveRequests,
+  updateLeaveRequest,
+  createLeaveRequest,
+  getMyLeaves,
+};
