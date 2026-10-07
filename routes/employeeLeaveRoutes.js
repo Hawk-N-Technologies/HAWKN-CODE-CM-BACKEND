@@ -8,6 +8,16 @@ router.get(
   authenticate(["hr"]),
   employeeLeaveController.getLeaveRequests,
 );
+router.post(
+  "/",
+  authenticate(["hr", "developer", "tester", "bde"]),
+  employeeLeaveController.createLeaveRequest,
+);
+router.get(
+  "/",
+  authenticate(["hr", "developer", "tester", "bde"]),
+  employeeLeaveController.getMyLeaves,
+);
 
 router.patch(
   "/leaves/:uuid",
