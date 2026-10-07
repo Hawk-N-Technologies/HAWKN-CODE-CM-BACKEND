@@ -1,7 +1,7 @@
 const User = require("../models/User");
 const Employee = require("../models/Employee");
 const Role = require("../models/Role");
-
+const { Op } = require("@sequelize/core");
 const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
 
@@ -84,6 +84,9 @@ async function getAllRoles() {
     return await Role.findAll({
       where: {
         isActive: true,
+        name: {
+          [Op.ne]: "client",
+        },
       },
       attributes: ["uuid", "name", "description"],
       order: [["name", "ASC"]],
@@ -467,6 +470,316 @@ async function getEmployeeIdByUserId(userId, transaction) {
     throw error;
   }
 }
+
+// services/employee.service.js
+
+async function getPeople(companyId, options = {}) {
+  const { search = "", page = 1, limit = 10, status, role } = options;
+
+  const offset = (page - 1) * limit;
+
+  const userWhere = {
+    companyId,
+  };
+
+  const trimmedSearch = search.trim();
+
+  if (trimmedSearch) {
+    userWhere[Op.or] = [
+      {
+        firstName: {
+          [Op.iLike]: `%${trimmedSearch}%`,
+        },
+      },
+      {
+        lastName: {
+          [Op.iLike]: `%${trimmedSearch}%`,
+        },
+      },
+      {
+        email: {
+          [Op.iLike]: `%${trimmedSearch}%`,
+        },
+      },
+    ];
+  }
+
+  const roleWhere = {
+    // Admin dashboard should not show clients
+    name: {
+      [Op.ne]: "client",
+    },
+  };
+
+  if (role) {
+    roleWhere.name = role;
+  }
+
+  const employeeWhere = {};
+
+  if (status) {
+    employeeWhere.employmentStatus = status;
+  }
+
+  const result = await User.findAndCountAll({
+    where: userWhere,
+
+    attributes: [
+      "id",
+      "uuid",
+      "companyId",
+      "roleId",
+      "firstName",
+      "lastName",
+      "email",
+      "isActive",
+      "createdAt",
+      "updatedAt",
+    ],
+
+    include: [
+      {
+        model: Role,
+        as: "role",
+        required: true,
+
+        attributes: ["id", "uuid", "name", "description"],
+
+        where: roleWhere,
+      },
+
+      {
+        model: Employee,
+        as: "employee",
+
+        // VERY IMPORTANT
+        // false = LEFT JOIN
+        required: false,
+
+        attributes: [
+          "id",
+          "uuid",
+          "companyId",
+          "companyEmail",
+          "phone1",
+          "phone2",
+          "whatsapp",
+          "joiningDate",
+          "dateOfBirth",
+          "linkedinUrl",
+          "githubUrl",
+          "aadhaarLast4",
+          "employmentType",
+          "employmentStatus",
+          "photoUrl",
+        ],
+
+        where:
+          Object.keys(employeeWhere).length > 0 ? employeeWhere : undefined,
+      },
+    ],
+
+    order: [["createdAt", "DESC"]],
+
+    limit,
+    offset,
+
+    distinct: true,
+  });
+
+  const rows = result.rows.map((user) => {
+    const employee = user.employee;
+
+    return {
+      // User information
+      id: employee?.id ?? user.id,
+
+      userId: user.id,
+      userUuid: user.uuid,
+
+      name: [user.firstName, user.lastName].filter(Boolean).join(" "),
+
+      firstName: user.firstName,
+      lastName: user.lastName,
+
+      email: user.email,
+
+      role: user.role?.name,
+      roleId: user.role?.id,
+      roleUuid: user.role?.uuid,
+      userIsActive: user.isActive,
+
+      // Employee information
+      employeeId: employee?.id ?? null,
+      employeeUuid: employee?.uuid ?? null,
+
+      companyEmail: employee?.companyEmail ?? null,
+
+      phone1: employee?.phone1 ?? null,
+      phone2: employee?.phone2 ?? null,
+      whatsapp: employee?.whatsapp ?? null,
+
+      joiningDate: employee?.joiningDate ?? null,
+      joinDate: employee?.joiningDate ?? null,
+
+      dateOfBirth: employee?.dateOfBirth ?? null,
+
+      linkedinUrl: employee?.linkedinUrl ?? null,
+      githubUrl: employee?.githubUrl ?? null,
+
+      aadhaarLast4: employee?.aadhaarLast4 ?? null,
+
+      employmentType: employee?.employmentType ?? null,
+
+      employmentStatus: employee?.employmentStatus ?? null,
+
+      status:
+        employee?.employmentStatus ?? (user.isActive ? "Active" : "Inactive"),
+
+      photoUrl: employee?.photoUrl ?? null,
+
+      // Useful flag for frontend
+      isEmployee: Boolean(employee),
+    };
+  });
+
+  return {
+    rows,
+
+    pagination: {
+      total: result.count,
+      page,
+      limit,
+      totalPages: Math.ceil(result.count / limit),
+    },
+  };
+}
+
+async function createPerson(data, companyId) {
+  const transaction = await sequelize.startUnmanagedTransaction();
+
+  try {
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      confirmPassword,
+      roleUuid,
+      isActive = true,
+    } = data;
+
+    /**
+     * Required fields.
+     */
+    if (!firstName || !firstName.trim()) {
+      throw new Error("First name is required.");
+    }
+
+    if (!lastName || !lastName.trim()) {
+      throw new Error("Last name is required.");
+    }
+
+    if (!email || !email.trim()) {
+      throw new Error("Email is required.");
+    }
+
+    if (!password) {
+      throw new Error("Password is required.");
+    }
+
+    if (!confirmPassword) {
+      throw new Error("Confirm password is required.");
+    }
+
+    if (password !== confirmPassword) {
+      throw new Error("Password and confirm password do not match.");
+    }
+
+    if (password.length < 8) {
+      throw new Error("Password must be at least 8 characters.");
+    }
+
+    if (!roleUuid) {
+      throw new Error("Role is required.");
+    }
+
+    /**
+     * Find role using UUID.
+     */
+    const role = await Role.findOne({
+      where: {
+        uuid: roleUuid,
+        isActive: true,
+
+        /**
+         * Client cannot be assigned from People Management.
+         */
+        name: {
+          [Op.ne]: "client",
+        },
+      },
+
+      transaction,
+    });
+
+    if (!role) {
+      throw new Error("Invalid or inactive role.");
+    }
+
+    /**
+     * Check duplicate email inside company.
+     */
+    const existingUser = await User.findOne({
+      where: {
+        companyId,
+        email: email.trim(),
+      },
+
+      transaction,
+    });
+
+    if (existingUser) {
+      throw new Error("A user with this email already exists.");
+    }
+
+    /**
+     * Hash password.
+     */
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    /**
+     * Create User ONLY.
+     */
+    const user = await User.create(
+      {
+        companyId,
+        roleId: role.id,
+
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+
+        email: email.trim(),
+
+        passwordHash,
+
+        isActive,
+      },
+      {
+        transaction,
+      },
+    );
+
+    await transaction.commit();
+
+    return await getPersonById(user.id, companyId);
+  } catch (error) {
+    await transaction.rollback();
+
+    throw error;
+  }
+}
+
 module.exports = {
   getAllEmployees,
   getEmployeeById,
@@ -475,4 +788,6 @@ module.exports = {
   updateEmployee,
   deleteEmployee,
   getEmployeeIdByUserId,
+  getPeople,
+  createPerson,
 };
