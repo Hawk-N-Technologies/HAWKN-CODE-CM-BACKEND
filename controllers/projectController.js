@@ -1,82 +1,197 @@
 const Joi = require("joi");
-const projectService = require("../services/projectService");
+const projectService = require("../services/projectServics");
 const logger = require("../utils/logger");
 
-// companyId always comes from the login token, never from the request
+// --------------------------------------------------
+// Validation
+// --------------------------------------------------
+
 const uuidSchema = Joi.string().guid().required();
 
-const invalidId = (res) => res.status(400).json({ success: false, message: "Invalid project ID" });
+const invalidId = (res) => {
+  return res.status(400).json({
+    success: false,
+    message: "Invalid project ID",
+  });
+};
 
-/**
- * Field-level errors (bad client, deadline before start, duplicate name…)
- * are sent in the same shape as the validate middleware —
- * { success, message, errors: [{ field, message }] } — so the form can
- * show them under the right inputs. Everything else → shared errorHandler.
- */
-function handleError(error, res, next, logLabel, req) {
-  logger.error(logLabel, { userId: req.user?.userId, uuid: req.params?.uuid, error: error.message });
+// --------------------------------------------------
+// Error Handler
+// --------------------------------------------------
+
+const handleError = (error, res, next, logLabel, req) => {
+  logger.error(logLabel, {
+    userId: req.user?.userId,
+    companyId: req.user?.companyId,
+    uuid: req.params?.uuid,
+    error: error.message,
+  });
+
+  // Validation errors
   if (Array.isArray(error.errors) && error.statusCode) {
-    return res.status(error.statusCode).json({ success: false, message: error.message, errors: error.errors });
+    return res.status(error.statusCode).json({
+      success: false,
+      message: error.message,
+      errors: error.errors,
+    });
   }
+
+  // Known service error
+  if (error.statusCode) {
+    return res.status(error.statusCode).json({
+      success: false,
+      message: error.message,
+    });
+  }
+
   return next(error);
-}
+};
 
-async function getOptions(req, res, next) {
-  try {
-    const data = await projectService.getOptions(req.user.companyId);
-    return res.status(200).json({ success: true, message: "Options fetched successfully", data });
-  } catch (error) {
-    return handleError(error, res, next, "Project options controller failed", req);
-  }
-}
+// --------------------------------------------------
+// Get Project Options
+// GET /api/admin/projects/options
+// --------------------------------------------------
 
-async function listProjects(req, res, next) {
+const getOptions = async (req, res, next) => {
   try {
-    const data = await projectService.listProjects(req.user.companyId, req.validatedQuery);
-    return res.status(200).json({ success: true, message: "Projects fetched successfully", data });
-  } catch (error) {
-    return handleError(error, res, next, "List projects controller failed", req);
-  }
-}
+    const data = await projectService.getProjectOptions(req.user.companyId);
 
-async function getProject(req, res, next) {
-  try {
-    if (uuidSchema.validate(req.params.uuid).error) return invalidId(res);
-    const data = await projectService.getProject(req.params.uuid, req.user.companyId);
-    return res.status(200).json({ success: true, message: "Project fetched successfully", data });
+    return res.status(200).json({
+      success: true,
+      message: "Project options fetched successfully",
+      data,
+    });
   } catch (error) {
-    return handleError(error, res, next, "Get project controller failed", req);
+    return handleError(error, res, next, "Get project options failed", req);
   }
-}
+};
 
-async function createProject(req, res, next) {
-  try {
-    const data = await projectService.createProject(req.user.companyId, req.body);
-    return res.status(201).json({ success: true, message: `Project "${data.name}" created`, data });
-  } catch (error) {
-    return handleError(error, res, next, "Create project controller failed", req);
-  }
-}
+// --------------------------------------------------
+// Get All Projects
+// GET /api/admin/projects
+// --------------------------------------------------
 
-async function updateProject(req, res, next) {
+const listProjects = async (req, res, next) => {
   try {
-    if (uuidSchema.validate(req.params.uuid).error) return invalidId(res);
-    const data = await projectService.updateProject(req.params.uuid, req.user.companyId, req.body);
-    return res.status(200).json({ success: true, message: `Project "${data.name}" updated`, data });
-  } catch (error) {
-    return handleError(error, res, next, "Update project controller failed", req);
-  }
-}
+    const data = await projectService.getProjects(
+      req.user.companyId,
+      req.validatedQuery?.status,
+    );
 
-async function deleteProject(req, res, next) {
-  try {
-    if (uuidSchema.validate(req.params.uuid).error) return invalidId(res);
-    await projectService.deleteProject(req.params.uuid, req.user.companyId);
-    return res.status(200).json({ success: true, message: "Project deleted", data: null });
+    return res.status(200).json({
+      success: true,
+      message: "Projects fetched successfully",
+      data,
+    });
   } catch (error) {
-    return handleError(error, res, next, "Delete project controller failed", req);
+    return handleError(error, res, next, "Get projects failed", req);
   }
-}
+};
+
+// --------------------------------------------------
+// Get Single Project
+// GET /api/admin/projects/:uuid
+// --------------------------------------------------
+
+const getProject = async (req, res, next) => {
+  try {
+    if (uuidSchema.validate(req.params.uuid).error) {
+      return invalidId(res);
+    }
+
+    const data = await projectService.getProjectByUuid(
+      req.user.companyId,
+      req.params.uuid,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Project fetched successfully",
+      data,
+    });
+  } catch (error) {
+    return handleError(error, res, next, "Get project failed", req);
+  }
+};
+
+// --------------------------------------------------
+// Create Project
+// POST /api/admin/projects
+// --------------------------------------------------
+
+const createProject = async (req, res, next) => {
+  try {
+    const data = await projectService.createProject(
+      req.user.companyId,
+      req.body,
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: `Project "${data.name}" created successfully`,
+      data,
+    });
+  } catch (error) {
+    return handleError(error, res, next, "Create project failed", req);
+  }
+};
+
+// --------------------------------------------------
+// Update Project
+// PUT /api/admin/projects/:uuid
+// --------------------------------------------------
+
+const updateProject = async (req, res, next) => {
+  try {
+    if (uuidSchema.validate(req.params.uuid).error) {
+      return invalidId(res);
+    }
+
+    const data = await projectService.updateProject(
+      req.user.companyId,
+      req.params.uuid,
+      req.body,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Project "${data.name}" updated successfully`,
+      data,
+    });
+  } catch (error) {
+    return handleError(error, res, next, "Update project failed", req);
+  }
+};
+
+// --------------------------------------------------
+// Delete Project
+// DELETE /api/admin/projects/:uuid
+// --------------------------------------------------
+
+const deleteProject = async (req, res, next) => {
+  try {
+    if (uuidSchema.validate(req.params.uuid).error) {
+      return invalidId(res);
+    }
+
+    const data = await projectService.deleteProject(
+      req.user.companyId,
+      req.params.uuid,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: data.message || "Project deleted successfully",
+      data: null,
+    });
+  } catch (error) {
+    return handleError(error, res, next, "Delete project failed", req);
+  }
+};
+
+// --------------------------------------------------
+// Exports
+// --------------------------------------------------
 
 module.exports = {
   getOptions,
