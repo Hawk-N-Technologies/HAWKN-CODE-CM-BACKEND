@@ -772,10 +772,180 @@ async function createPerson(data, companyId) {
 
     await transaction.commit();
 
-    return await getPersonById(user.id, companyId);
+    return {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+    };
   } catch (error) {
     await transaction.rollback();
 
+    throw error;
+  }
+}
+
+async function updatePerson(data, personId, companyId) {
+  const transaction = await sequelize.startUnmanagedTransaction();
+
+  try {
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      confirmPassword,
+      roleUuid,
+      isActive,
+    } = data;
+
+    const user = await User.findOne({
+      where: {
+        uuid: personId,
+        companyId,
+      },
+      transaction,
+    });
+
+    console.log(user);
+
+    if (!user) {
+      throw new Error("User not found.");
+    }
+    const updateData = {};
+
+    if (firstName !== undefined) {
+      if (!firstName || !firstName.trim()) {
+        throw new Error("First name is required.");
+      }
+
+      if (firstName.trim().length < 2) {
+        throw new Error("First name must be at least 2 characters.");
+      }
+
+      if (!/^[a-zA-Z\s'-]+$/.test(firstName.trim())) {
+        throw new Error("First name contains invalid characters.");
+      }
+
+      updateData.firstName = firstName.trim();
+    }
+
+    if (lastName !== undefined) {
+      if (!lastName || !lastName.trim()) {
+        throw new Error("Last name is required.");
+      }
+
+      if (lastName.trim().length < 2) {
+        throw new Error("Last name must be at least 2 characters.");
+      }
+
+      if (!/^[a-zA-Z\s'-]+$/.test(lastName.trim())) {
+        throw new Error("Last name contains invalid characters.");
+      }
+
+      updateData.lastName = lastName.trim();
+    }
+
+    if (email !== undefined) {
+      if (!email || !email.trim()) {
+        throw new Error("Email is required.");
+      }
+
+      const normalizedEmail = email.trim();
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        throw new Error("Enter a valid email address.");
+      }
+
+      if (normalizedEmail !== user.email) {
+        const existingUser = await User.findOne({
+          where: {
+            companyId,
+            email: normalizedEmail,
+            id: {
+              [Op.ne]: user.id,
+            },
+          },
+          transaction,
+        });
+
+        if (existingUser) {
+          throw new Error("A user with this email already exists.");
+        }
+      }
+
+      updateData.email = normalizedEmail;
+    }
+
+    if (roleUuid !== undefined) {
+      if (!roleUuid) {
+        throw new Error("Role is required.");
+      }
+
+      const role = await Role.findOne({
+        where: {
+          uuid: roleUuid,
+          isActive: true,
+
+          name: {
+            [Op.ne]: "client",
+          },
+        },
+        transaction,
+      });
+
+      if (!role) {
+        throw new Error("Invalid or inactive role.");
+      }
+
+      updateData.roleId = role.id;
+    }
+
+    if (password !== undefined || confirmPassword !== undefined) {
+      if (!password) {
+        throw new Error("Password is required.");
+      }
+
+      if (!confirmPassword) {
+        throw new Error("Confirm password is required.");
+      }
+
+      if (password !== confirmPassword) {
+        throw new Error("Password and confirm password do not match.");
+      }
+
+      if (password.length < 8) {
+        throw new Error("Password must be at least 8 characters.");
+      }
+
+      updateData.passwordHash = await bcrypt.hash(password, 12);
+    }
+
+    if (isActive !== undefined) {
+      if (typeof isActive !== "boolean") {
+        throw new Error("Account status must be true or false.");
+      }
+
+      updateData.isActive = isActive;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      throw new Error("No fields provided for update.");
+    }
+
+    await user.update(updateData, {
+      transaction,
+    });
+
+    await transaction.commit();
+
+    return {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+    };
+  } catch (error) {
+    console.log(error);
+    await transaction.rollback();
     throw error;
   }
 }
@@ -790,4 +960,5 @@ module.exports = {
   getEmployeeIdByUserId,
   getPeople,
   createPerson,
+  updatePerson,
 };

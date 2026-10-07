@@ -27,6 +27,11 @@ router.post(
   validate(createEmployeeSchema),
   employeeController.createEmployee,
 );
+router.put(
+  "/people/:id",
+  authenticate(["admin"]),
+  employeeController.updatePerson,
+);
 
 // Update employee
 router.put("/:id", authenticate(["hr"]), employeeController.updateEmployee);

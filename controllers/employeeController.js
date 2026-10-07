@@ -217,6 +217,32 @@ async function createPerson(req, res) {
   }
 }
 
+async function updatePerson(req, res) {
+  try {
+    const companyId = req.user.companyId;
+    const personId = req.params.id;
+    console.log(req.params);
+    const person = await employeeService.updatePerson(
+      req.body,
+      personId,
+      companyId,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Person updated successfully.",
+      data: person,
+    });
+  } catch (error) {
+    console.error("Update person error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to update person.",
+    });
+  }
+}
+
 module.exports = {
   getEmployees,
   getEmployee,
@@ -226,4 +252,5 @@ module.exports = {
   deleteEmployee,
   getPeople,
   createPerson,
+  updatePerson,
 };
