@@ -32,7 +32,7 @@ const createClient = async (req, res) => {
         message: "Password is required.",
       });
     }
- 
+
     const client = await clientService.createClient({
       companyId,
       firstName,
@@ -98,7 +98,7 @@ const getClientById = async (req, res) => {
 const updateClient = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-
+    console.log(req.body);
     const client = await clientService.updateClient(
       req.params.id,
       companyId,

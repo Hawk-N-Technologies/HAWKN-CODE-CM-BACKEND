@@ -128,7 +128,7 @@ const getClients = async (companyId) => {
 const getClientById = async (clientId, companyId) => {
   const client = await Client.findOne({
     where: {
-      id: clientId,
+      uuid: clientId,
       companyId,
     },
     include: [
@@ -172,7 +172,7 @@ const updateClient = async (
   try {
     const client = await Client.findOne({
       where: {
-        id: clientId,
+        uuid: clientId,
         companyId,
       },
       transaction,
