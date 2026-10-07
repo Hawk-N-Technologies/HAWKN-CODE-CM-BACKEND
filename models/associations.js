@@ -11,6 +11,8 @@ const EmployeeOnboarding = require("./EmployeeOnboarding");
 const Attendance = require("./Attendance");
 const EmployeeSalary = require("./EmployeeSalary");
 const EmployeeLeave = require("./EmployeeLeave");
+const Client = require("./Client");
+const Project = require("./Project");
 
 // Company → Users
 Company.hasMany(User, {
@@ -119,6 +121,26 @@ Employee.hasMany(EmployeeLeave, {
   as: "leaves",
 });
 
+Client.hasMany(Project, {
+  foreignKey: "clientId",
+  as: "projects",
+});
+
+Project.belongsTo(Client, {
+  foreignKey: "clientId",
+  as: "client",
+});
+
+Employee.hasMany(Project, {
+  foreignKey: "projectLeadId",
+  as: "ledProjects",
+});
+
+Project.belongsTo(Employee, {
+  foreignKey: "projectLeadId",
+  as: "projectLead",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -133,4 +155,6 @@ module.exports = {
   Attendance,
   EmployeeOnboarding,
   EmployeeLeave,
+  Client,
+  Project,
 };
