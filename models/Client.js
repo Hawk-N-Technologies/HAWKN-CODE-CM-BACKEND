@@ -30,12 +30,6 @@ const Client = sequelize.define(
       field: "company_id",
     },
 
-    contactPerson: {
-      type: DataTypes.STRING(150),
-      allowNull: true,
-      field: "contact_person",
-    },
-
     phone: {
       type: DataTypes.STRING(30),
       allowNull: true,

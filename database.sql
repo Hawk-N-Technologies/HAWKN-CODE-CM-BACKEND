@@ -481,7 +481,6 @@ CREATE TABLE clients (
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     user_id INTEGER NOT NULL UNIQUE,
     company_id INTEGER NOT NULL,
-    contact_person VARCHAR(150),
     phone VARCHAR(30),
     address TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -498,6 +497,7 @@ CREATE TABLE clients (
     CONSTRAINT uq_clients_company_user
         UNIQUE (company_id, user_id)
 );
+
 
 
 
