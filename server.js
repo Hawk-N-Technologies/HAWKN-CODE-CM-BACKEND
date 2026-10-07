@@ -20,6 +20,7 @@ const bonusRoutes = require("./routes/bonusRoutes");
 const incrementRoutes = require("./routes/incrementRoutes");
 const internshipProbationRoutes = require("./routes/internshipProbationRoutes");
 const adminHrmsRoutes = require("./routes/adminHrmsRoutes");
+const clientRoutes = require("./routes/clientRoutes");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -59,6 +60,7 @@ app.use("/api/bonuses", bonusRoutes);
 app.use("/api/increments", incrementRoutes);
 app.use("/api/internship-probation", internshipProbationRoutes);
 app.use("/api/admin/hrms", adminHrmsRoutes);
+app.use("/api/clients", clientRoutes);
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;

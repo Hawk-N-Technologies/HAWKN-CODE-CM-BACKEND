@@ -17,26 +17,23 @@ const Client = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
     },
 
+    userId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      unique: true,
+      field: "user_id",
+    },
+
     companyId: {
       type: DataTypes.INTEGER,
       allowNull: false,
       field: "company_id",
     },
 
-    name: {
-      type: DataTypes.STRING(255),
-      allowNull: false,
-    },
-
     contactPerson: {
       type: DataTypes.STRING(150),
       allowNull: true,
       field: "contact_person",
-    },
-
-    email: {
-      type: DataTypes.STRING(255),
-      allowNull: true,
     },
 
     phone: {
