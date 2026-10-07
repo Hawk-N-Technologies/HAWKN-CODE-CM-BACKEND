@@ -162,6 +162,61 @@ const deleteEmployee = async (req, res) => {
   }
 };
 
+async function getPeople(req, res) {
+  try {
+    const companyId = req.user.companyId;
+
+    const { search, page = 1, limit = 10, status, role } = req.query;
+
+    const result = await employeeService.getPeople(companyId, {
+      search,
+      page: Number(page),
+      limit: Number(limit),
+      status,
+      role,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result.rows,
+      pagination: result.pagination,
+    });
+  } catch (error) {
+    req.logger?.error?.("Failed to fetch people", {
+      error: error.message,
+      stack: error.stack,
+    });
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to fetch people",
+    });
+  }
+}
+
+async function createPerson(req, res) {
+  try {
+    const companyId = req.user.companyId;
+
+    console.log(req.body);
+    return;
+    const person = await employeeService.createPerson(req.body, companyId);
+
+    return res.status(201).json({
+      success: true,
+      message: "Person created successfully.",
+      data: person,
+    });
+  } catch (error) {
+    console.error("Create person error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to create person.",
+    });
+  }
+}
+
 module.exports = {
   getEmployees,
   getEmployee,
@@ -169,4 +224,6 @@ module.exports = {
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  getPeople,
+  createPerson,
 };
