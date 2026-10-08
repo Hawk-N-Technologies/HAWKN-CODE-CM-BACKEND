@@ -1,33 +1,85 @@
 "use strict";
 
-/**
- * Clients (companies HawKN builds projects for).
- * Copied word-for-word from database.sql so the schema stays exactly the
- * team's design. IF NOT EXISTS → safe if the table was already created
- * from database.sql in pgAdmin (then this does nothing).
- */
 module.exports = {
-  async up(queryInterface) {
+  async up(queryInterface, Sequelize) {
+    const exists = await queryInterface.tableExists("clients");
+
+    if (exists) {
+      console.log("clients table already exists");
+      return;
+    }
+
+    await queryInterface.createTable("clients", {
+      id: {
+        type: Sequelize.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+        allowNull: false,
+      },
+
+      uuid: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        unique: true,
+        defaultValue: Sequelize.literal("gen_random_uuid()"),
+      },
+
+      user_id: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        unique: true,
+        references: {
+          table: "users",
+          field: "id",
+        },
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      },
+
+      company_id: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        references: {
+          table: "companies",
+          field: "id",
+        },
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      },
+
+      phone: {
+        type: Sequelize.STRING(30),
+        allowNull: true,
+      },
+
+      address: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+
+      is_active: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+
+      created_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
+      },
+
+      updated_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
+      },
+    });
+
     await queryInterface.sequelize.query(`
-      CREATE TABLE IF NOT EXISTS clients (
-          id SERIAL PRIMARY KEY,
-          uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
-          company_id INTEGER NOT NULL,
-          name VARCHAR(255) NOT NULL,
-          contact_person VARCHAR(150),
-          email VARCHAR(255),
-          phone VARCHAR(30),
-          address TEXT,
-          is_active BOOLEAN NOT NULL DEFAULT TRUE,
-          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          CONSTRAINT fk_clients_company
-              FOREIGN KEY (company_id)
-              REFERENCES companies(id)
-              ON DELETE CASCADE,
-          CONSTRAINT uq_clients_company_name
-              UNIQUE (company_id, name)
-      );
+      ALTER TABLE "clients"
+        ADD CONSTRAINT "uq_clients_company_user"
+        UNIQUE ("company_id", "user_id");
     `);
   },
 
