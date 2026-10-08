@@ -5,7 +5,7 @@ const logger = require("../utils/logger");
 
 const MAX_ROWS = 1000; // safety cap until the list gets pagination
 const DUE_SOON_DAYS = 14;
-// A project is "closed" once it's in one of these — no overdue warnings, no edits to dates mattering
+// A project is "closed" once it's in one of these — no overdue warnings
 const CLOSED_STATUSES = ["Completed", "Cancelled"];
 // Only projects that never really started can be deleted
 const DELETABLE_STATUSES = ["Planning", "Cancelled"];
@@ -43,15 +43,18 @@ const LIST_SQL = `
          p.created_at        AS "createdAt",
          p.updated_at        AS "updatedAt",
          c.uuid              AS "clientUuid",
-         c.name              AS "clientName",
-         c.contact_person    AS "clientContact",
-         c.email             AS "clientEmail",
+         c.phone             AS "clientPhone",
+         cu.first_name       AS "clientFirstName",
+         cu.last_name        AS "clientLastName",
+         cu.email            AS "clientEmail",
          le.uuid             AS "leadUuid",
          lu.first_name       AS "leadFirstName",
          lu.last_name        AS "leadLastName",
          lu.email            AS "leadEmail"
     FROM projects p
+    -- A client IS a user (clients.user_id): name + email live on users
     JOIN clients c         ON c.id = p.client_id
+    JOIN users cu          ON cu.id = c.user_id
     LEFT JOIN employees le ON le.id = p.project_lead_id
     LEFT JOIN users lu     ON lu.id = le.user_id
    WHERE p.company_id = :companyId
@@ -82,9 +85,9 @@ function toResponse(row) {
     canDelete: DELETABLE_STATUSES.includes(row.status),
     client: {
       uuid: row.clientUuid,
-      name: row.clientName,
-      contactPerson: row.clientContact,
+      name: fullName(row.clientFirstName, row.clientLastName),
       email: row.clientEmail,
+      phone: row.clientPhone,
     },
     projectLead: row.leadUuid
       ? { uuid: row.leadUuid, fullName: fullName(row.leadFirstName, row.leadLastName), email: row.leadEmail }
@@ -105,17 +108,23 @@ async function getOne(uuid, companyId) {
 async function prepare(companyId, data, current, transaction) {
   const errors = {};
 
-  // Client: active client of THIS company (or the project's current client)
+  // Client: active client (client row + its user) of THIS company,
+  // or the project's current client even if since deactivated
   const [client] = await select(
-    `SELECT id FROM clients
-      WHERE uuid = :clientUuid AND company_id = :companyId
-        AND (is_active = TRUE OR id = :currentClientId)`,
+    `SELECT c.id
+       FROM clients c
+       JOIN users u ON u.id = c.user_id
+      WHERE c.uuid = :clientUuid AND c.company_id = :companyId
+        AND ((c.is_active = TRUE AND u.is_active = TRUE) OR c.id = :currentClientId)`,
     { clientUuid: data.clientUuid, companyId, currentClientId: current?.clientId ?? -1 },
     transaction,
   );
   if (!client) errors.clientUuid = "Select an active client from the list";
 
-  // Lead: project_lead role, not exited, THIS company (or the current lead)
+  // Lead: an ACTIVE DEVELOPER employee of THIS company (or the project's
+  // current lead, even if they've since left / changed role).
+  // project_lead_id stores employees.id — the UUID from the form is
+  // looked up here, never trusted as an id.
   let leadId = null;
   if (data.projectLeadUuid) {
     const [lead] = await select(
@@ -125,13 +134,13 @@ async function prepare(companyId, data, current, transaction) {
          JOIN roles r ON r.id = u.role_id
         WHERE e.uuid = :leadUuid AND e.company_id = :companyId
           AND (
-                (r.name = 'project_lead' AND e.employment_status <> 'Exited' AND u.is_active = TRUE)
+                (r.name = 'developer' AND e.employment_status <> 'Exited' AND u.is_active = TRUE)
                 OR e.id = :currentLeadId
               )`,
       { leadUuid: data.projectLeadUuid, companyId, currentLeadId: current?.projectLeadId ?? -1 },
       transaction,
     );
-    if (!lead) errors.projectLeadUuid = "Select a project lead from the list";
+    if (!lead) errors.projectLeadUuid = "Select an active developer as project lead";
     else leadId = lead.id;
   }
 
@@ -207,20 +216,24 @@ async function findProjectRow(uuid, companyId, transaction) {
 // Dropdown data for the form: active clients + available project leads
 async function getOptions(companyId) {
   const clients = await select(
-    `SELECT uuid, name, contact_person AS "contactPerson"
-       FROM clients
-      WHERE company_id = :companyId AND is_active = TRUE
-      ORDER BY name`,
+    `SELECT c.uuid, u.first_name AS "firstName", u.last_name AS "lastName", u.email
+       FROM clients c
+       JOIN users u ON u.id = c.user_id
+      WHERE c.company_id = :companyId
+        AND c.is_active = TRUE
+        AND u.is_active = TRUE
+      ORDER BY u.first_name, u.last_name`,
     { companyId },
   );
 
+  // Project lead = an active DEVELOPER employee (senior's rule)
   const projectLeads = await select(
     `SELECT e.uuid, u.first_name AS "firstName", u.last_name AS "lastName", u.email
        FROM employees e
        JOIN users u ON u.id = e.user_id
        JOIN roles r ON r.id = u.role_id
       WHERE e.company_id = :companyId
-        AND r.name = 'project_lead'
+        AND r.name = 'developer'
         AND e.employment_status <> 'Exited'
         AND u.is_active = TRUE
       ORDER BY u.first_name, u.last_name`,
@@ -228,7 +241,11 @@ async function getOptions(companyId) {
   );
 
   return {
-    clients,
+    clients: clients.map((client) => ({
+      uuid: client.uuid,
+      name: fullName(client.firstName, client.lastName),
+      email: client.email,
+    })),
     projectLeads: projectLeads.map((lead) => ({
       uuid: lead.uuid,
       fullName: fullName(lead.firstName, lead.lastName),

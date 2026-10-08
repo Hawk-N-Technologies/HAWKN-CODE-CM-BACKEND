@@ -9,7 +9,7 @@ const { projectSchema, listProjectsQuerySchema } = require("../validations/proje
 const router = express.Router();
 
 // Admin-only (Project Lead pages will get their own routes later)
-router.use(authenticate(["admin"]));
+router.use(authenticate(["admin", "bde"]));
 
 // Dropdown data: active clients + project leads — keep ABOVE "/:uuid"
 router.get("/options", projectController.getOptions);
