@@ -8,27 +8,28 @@ const logger = require("../utils/logger");
 
 const uuidSchema = Joi.string().guid().required();
 
-const invalidId = (res) => {
+function invalidId(res) {
   return res.status(400).json({
     success: false,
     message: "Invalid project ID",
   });
-};
+}
 
 // --------------------------------------------------
 // Error Handler
 // --------------------------------------------------
 
-const handleError = (error, res, next, logLabel, req) => {
+function handleError(error, res, next, logLabel, req) {
   logger.error(logLabel, {
     userId: req.user?.userId,
     companyId: req.user?.companyId,
     uuid: req.params?.uuid,
     error: error.message,
+    stack: error.stack,
   });
 
-  // Validation errors
-  if (Array.isArray(error.errors) && error.statusCode) {
+  // Service validation errors
+  if (error.statusCode && Array.isArray(error.errors)) {
     return res.status(error.statusCode).json({
       success: false,
       message: error.message,
@@ -36,7 +37,7 @@ const handleError = (error, res, next, logLabel, req) => {
     });
   }
 
-  // Known service error
+  // Known service errors
   if (error.statusCode) {
     return res.status(error.statusCode).json({
       success: false,
@@ -44,17 +45,18 @@ const handleError = (error, res, next, logLabel, req) => {
     });
   }
 
+  // Unknown errors -> global error middleware
   return next(error);
-};
+}
 
 // --------------------------------------------------
 // Get Project Options
 // GET /api/admin/projects/options
 // --------------------------------------------------
 
-const getOptions = async (req, res, next) => {
+async function getOptions(req, res, next) {
   try {
-    const data = await projectService.getProjectOptions(req.user.companyId);
+    const data = await projectService.getOptions(req.user.companyId);
 
     return res.status(200).json({
       success: true,
@@ -64,18 +66,22 @@ const getOptions = async (req, res, next) => {
   } catch (error) {
     return handleError(error, res, next, "Get project options failed", req);
   }
-};
+}
 
 // --------------------------------------------------
 // Get All Projects
 // GET /api/admin/projects
 // --------------------------------------------------
 
-const listProjects = async (req, res, next) => {
+async function listProjects(req, res, next) {
   try {
-    const data = await projectService.getProjects(
+    const data = await projectService.listProjects(
       req.user.companyId,
-      req.validatedQuery?.status,
+      req.validatedQuery?.status
+        ? {
+            status: req.validatedQuery.status,
+          }
+        : {},
     );
 
     return res.status(200).json({
@@ -86,22 +92,24 @@ const listProjects = async (req, res, next) => {
   } catch (error) {
     return handleError(error, res, next, "Get projects failed", req);
   }
-};
+}
 
 // --------------------------------------------------
 // Get Single Project
 // GET /api/admin/projects/:uuid
 // --------------------------------------------------
 
-const getProject = async (req, res, next) => {
+async function getProject(req, res, next) {
   try {
-    if (uuidSchema.validate(req.params.uuid).error) {
+    const { error } = uuidSchema.validate(req.params.uuid);
+
+    if (error) {
       return invalidId(res);
     }
 
-    const data = await projectService.getProjectByUuid(
-      req.user.companyId,
+    const data = await projectService.getProject(
       req.params.uuid,
+      req.user.companyId,
     );
 
     return res.status(200).json({
@@ -112,14 +120,14 @@ const getProject = async (req, res, next) => {
   } catch (error) {
     return handleError(error, res, next, "Get project failed", req);
   }
-};
+}
 
 // --------------------------------------------------
 // Create Project
 // POST /api/admin/projects
 // --------------------------------------------------
 
-const createProject = async (req, res, next) => {
+async function createProject(req, res, next) {
   try {
     const data = await projectService.createProject(
       req.user.companyId,
@@ -134,22 +142,24 @@ const createProject = async (req, res, next) => {
   } catch (error) {
     return handleError(error, res, next, "Create project failed", req);
   }
-};
+}
 
 // --------------------------------------------------
 // Update Project
 // PUT /api/admin/projects/:uuid
 // --------------------------------------------------
 
-const updateProject = async (req, res, next) => {
+async function updateProject(req, res, next) {
   try {
-    if (uuidSchema.validate(req.params.uuid).error) {
+    const { error } = uuidSchema.validate(req.params.uuid);
+
+    if (error) {
       return invalidId(res);
     }
 
     const data = await projectService.updateProject(
-      req.user.companyId,
       req.params.uuid,
+      req.user.companyId,
       req.body,
     );
 
@@ -161,33 +171,32 @@ const updateProject = async (req, res, next) => {
   } catch (error) {
     return handleError(error, res, next, "Update project failed", req);
   }
-};
+}
 
 // --------------------------------------------------
 // Delete Project
 // DELETE /api/admin/projects/:uuid
 // --------------------------------------------------
 
-const deleteProject = async (req, res, next) => {
+async function deleteProject(req, res, next) {
   try {
-    if (uuidSchema.validate(req.params.uuid).error) {
+    const { error } = uuidSchema.validate(req.params.uuid);
+
+    if (error) {
       return invalidId(res);
     }
 
-    const data = await projectService.deleteProject(
-      req.user.companyId,
-      req.params.uuid,
-    );
+    await projectService.deleteProject(req.params.uuid, req.user.companyId);
 
     return res.status(200).json({
       success: true,
-      message: data.message || "Project deleted successfully",
+      message: "Project deleted successfully",
       data: null,
     });
   } catch (error) {
     return handleError(error, res, next, "Delete project failed", req);
   }
-};
+}
 
 // --------------------------------------------------
 // Exports
