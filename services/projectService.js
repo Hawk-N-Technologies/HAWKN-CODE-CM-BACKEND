@@ -331,7 +331,7 @@ async function prepareProjectData(companyId, data, currentProject = null) {
               required: true,
 
               where: {
-                name: "project_lead",
+                name: "developer",
               },
             },
           ],
