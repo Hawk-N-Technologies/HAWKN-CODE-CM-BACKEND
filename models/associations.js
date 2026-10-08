@@ -3,20 +3,75 @@ const CompanyProfile = require("./CompanyProfile");
 const CompanyPolicy = require("./CompanyPolicy");
 const CompanyRolesResponsibilities = require("./CompanyRolesResponsibilities");
 const EmployeeHierarchyImage = require("./EmployeeHierarchyImage");
+
 const User = require("./User");
 const Role = require("./Role");
-const Payroll = require("./Payroll");
+
 const Employee = require("./Employee");
 const EmployeeOnboarding = require("./EmployeeOnboarding");
-const Attendance = require("./Attendance");
 const EmployeeSalary = require("./EmployeeSalary");
 const EmployeeLeave = require("./EmployeeLeave");
+const Attendance = require("./Attendance");
+const Payroll = require("./Payroll");
+
 const Client = require("./Client");
 const Project = require("./Project");
 
-// --------------------------------------------------
-// Company → Users
-// --------------------------------------------------
+const BRD = require("./BRD");
+const BRDVersion = require("./BRDVersion");
+const BRDReview = require("./BRDReview");
+
+/*
+|--------------------------------------------------------------------------
+| Company
+|--------------------------------------------------------------------------
+*/
+
+Company.hasOne(CompanyProfile, {
+  foreignKey: "companyId",
+  as: "profile",
+});
+
+CompanyProfile.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+Company.hasOne(CompanyPolicy, {
+  foreignKey: "companyId",
+  as: "policy",
+});
+
+CompanyPolicy.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+Company.hasOne(CompanyRolesResponsibilities, {
+  foreignKey: "companyId",
+  as: "rolesResponsibilities",
+});
+
+CompanyRolesResponsibilities.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+Company.hasOne(EmployeeHierarchyImage, {
+  foreignKey: "companyId",
+  as: "employeeHierarchyImage",
+});
+
+EmployeeHierarchyImage.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Company - Users
+|--------------------------------------------------------------------------
+*/
 
 Company.hasMany(User, {
   foreignKey: "companyId",
@@ -28,9 +83,11 @@ User.belongsTo(Company, {
   as: "company",
 });
 
-// --------------------------------------------------
-// Role → Users
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Role - Users
+|--------------------------------------------------------------------------
+*/
 
 Role.hasMany(User, {
   foreignKey: "roleId",
@@ -42,23 +99,11 @@ User.belongsTo(Role, {
   as: "role",
 });
 
-// --------------------------------------------------
-// User → Employee
-// --------------------------------------------------
-
-User.hasOne(Employee, {
-  foreignKey: "userId",
-  as: "employee",
-});
-
-Employee.belongsTo(User, {
-  foreignKey: "userId",
-  as: "user",
-});
-
-// --------------------------------------------------
-// Company → Employees
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Company - Employees
+|--------------------------------------------------------------------------
+*/
 
 Company.hasMany(Employee, {
   foreignKey: "companyId",
@@ -70,37 +115,27 @@ Employee.belongsTo(Company, {
   as: "company",
 });
 
-// --------------------------------------------------
-// User → Client
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| User - Employee
+|--------------------------------------------------------------------------
+*/
 
-User.hasOne(Client, {
+User.hasOne(Employee, {
   foreignKey: "userId",
-  as: "client",
+  as: "employee",
 });
 
-Client.belongsTo(User, {
+Employee.belongsTo(User, {
   foreignKey: "userId",
   as: "user",
 });
 
-// --------------------------------------------------
-// Company → Clients
-// --------------------------------------------------
-
-Company.hasMany(Client, {
-  foreignKey: "companyId",
-  as: "clients",
-});
-
-Client.belongsTo(Company, {
-  foreignKey: "companyId",
-  as: "company",
-});
-
-// --------------------------------------------------
-// Employee → Onboarding
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Employee - Onboarding
+|--------------------------------------------------------------------------
+*/
 
 Employee.hasOne(EmployeeOnboarding, {
   foreignKey: "employeeId",
@@ -112,27 +147,15 @@ EmployeeOnboarding.belongsTo(Employee, {
   as: "employee",
 });
 
-// --------------------------------------------------
-// User → Payrolls
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Employee - Salary
+|--------------------------------------------------------------------------
+*/
 
-User.hasMany(Payroll, {
-  foreignKey: "userId",
-  as: "payrolls",
-});
-
-Payroll.belongsTo(User, {
-  foreignKey: "userId",
-  as: "employee",
-});
-
-// --------------------------------------------------
-// Employee → Salary
-// --------------------------------------------------
-
-Employee.hasOne(EmployeeSalary, {
+Employee.hasMany(EmployeeSalary, {
   foreignKey: "employeeId",
-  as: "salary",
+  as: "salaries",
 });
 
 EmployeeSalary.belongsTo(Employee, {
@@ -140,9 +163,11 @@ EmployeeSalary.belongsTo(Employee, {
   as: "employee",
 });
 
-// --------------------------------------------------
-// Employee → Attendance
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Employee - Attendance
+|--------------------------------------------------------------------------
+*/
 
 Employee.hasMany(Attendance, {
   foreignKey: "employeeId",
@@ -154,9 +179,11 @@ Attendance.belongsTo(Employee, {
   as: "employee",
 });
 
-// --------------------------------------------------
-// Company → Attendance
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Company - Attendance
+|--------------------------------------------------------------------------
+*/
 
 Company.hasMany(Attendance, {
   foreignKey: "companyId",
@@ -168,9 +195,11 @@ Attendance.belongsTo(Company, {
   as: "company",
 });
 
-// --------------------------------------------------
-// Employee → Leave
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Employee - Leave
+|--------------------------------------------------------------------------
+*/
 
 Employee.hasMany(EmployeeLeave, {
   foreignKey: "employeeId",
@@ -182,9 +211,75 @@ EmployeeLeave.belongsTo(Employee, {
   as: "employee",
 });
 
-// --------------------------------------------------
-// Client → Projects
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Company - Payroll
+|--------------------------------------------------------------------------
+*/
+
+Company.hasMany(Payroll, {
+  foreignKey: "companyId",
+  as: "payrolls",
+});
+
+Payroll.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Employee - Payroll
+|--------------------------------------------------------------------------
+*/
+
+Employee.hasMany(Payroll, {
+  foreignKey: "employeeId",
+  as: "payrolls",
+});
+
+Payroll.belongsTo(Employee, {
+  foreignKey: "employeeId",
+  as: "employee",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Company - Clients
+|--------------------------------------------------------------------------
+*/
+
+Company.hasMany(Client, {
+  foreignKey: "companyId",
+  as: "clients",
+});
+
+Client.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+/*
+|--------------------------------------------------------------------------
+| User - Client
+|--------------------------------------------------------------------------
+*/
+
+User.hasOne(Client, {
+  foreignKey: "userId",
+  as: "client",
+});
+
+Client.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Client - Projects
+|--------------------------------------------------------------------------
+*/
 
 Client.hasMany(Project, {
   foreignKey: "clientId",
@@ -196,9 +291,28 @@ Project.belongsTo(Client, {
   as: "client",
 });
 
-// --------------------------------------------------
-// Employee → Projects as Project Lead
-// --------------------------------------------------
+/*
+|--------------------------------------------------------------------------
+| Company - Projects
+|--------------------------------------------------------------------------
+*/
+
+Company.hasMany(Project, {
+  foreignKey: "companyId",
+  as: "projects",
+});
+
+Project.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Employee - Projects
+|--------------------------------------------------------------------------
+| Project Lead
+*/
 
 Employee.hasMany(Project, {
   foreignKey: "projectLeadId",
@@ -210,20 +324,175 @@ Project.belongsTo(Employee, {
   as: "projectLead",
 });
 
+/*
+|--------------------------------------------------------------------------
+| BRD
+|--------------------------------------------------------------------------
+| One Project -> One BRD
+*/
+
+Project.hasOne(BRD, {
+  foreignKey: "projectId",
+  as: "brd",
+});
+
+BRD.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Company - BRD
+|--------------------------------------------------------------------------
+*/
+
+Company.hasMany(BRD, {
+  foreignKey: "companyId",
+  as: "brds",
+});
+
+BRD.belongsTo(Company, {
+  foreignKey: "companyId",
+  as: "company",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Client - BRD
+|--------------------------------------------------------------------------
+*/
+
+Client.hasMany(BRD, {
+  foreignKey: "clientId",
+  as: "brds",
+});
+
+BRD.belongsTo(Client, {
+  foreignKey: "clientId",
+  as: "client",
+});
+
+/*
+|--------------------------------------------------------------------------
+| User - BRD
+|--------------------------------------------------------------------------
+| User who created the BRD
+*/
+
+User.hasMany(BRD, {
+  foreignKey: "createdBy",
+  as: "createdBrds",
+});
+
+BRD.belongsTo(User, {
+  foreignKey: "createdBy",
+  as: "creator",
+});
+
+/*
+|--------------------------------------------------------------------------
+| BRD - BRD Versions
+|--------------------------------------------------------------------------
+*/
+
+BRD.hasMany(BRDVersion, {
+  foreignKey: "brdId",
+  as: "versions",
+});
+
+BRDVersion.belongsTo(BRD, {
+  foreignKey: "brdId",
+  as: "brd",
+});
+
+/*
+|--------------------------------------------------------------------------
+| User - BRD Versions
+|--------------------------------------------------------------------------
+| User who uploaded the version
+*/
+
+User.hasMany(BRDVersion, {
+  foreignKey: "uploadedBy",
+  as: "uploadedBrdVersions",
+});
+
+BRDVersion.belongsTo(User, {
+  foreignKey: "uploadedBy",
+  as: "uploader",
+});
+
+/*
+|--------------------------------------------------------------------------
+| BRD - Reviews
+|--------------------------------------------------------------------------
+*/
+
+BRD.hasMany(BRDReview, {
+  foreignKey: "brdId",
+  as: "reviews",
+});
+
+BRDReview.belongsTo(BRD, {
+  foreignKey: "brdId",
+  as: "brd",
+});
+
+/*
+|--------------------------------------------------------------------------
+| BRD Version - Reviews
+|--------------------------------------------------------------------------
+*/
+
+BRDVersion.hasMany(BRDReview, {
+  foreignKey: "brdVersionId",
+  as: "reviews",
+});
+
+BRDReview.belongsTo(BRDVersion, {
+  foreignKey: "brdVersionId",
+  as: "version",
+});
+
+/*
+|--------------------------------------------------------------------------
+| User - BRD Reviews
+|--------------------------------------------------------------------------
+| Admin / Client who reviewed the BRD
+*/
+
+User.hasMany(BRDReview, {
+  foreignKey: "reviewerId",
+  as: "brdReviews",
+});
+
+BRDReview.belongsTo(User, {
+  foreignKey: "reviewerId",
+  as: "reviewer",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
   CompanyPolicy,
   CompanyRolesResponsibilities,
   EmployeeHierarchyImage,
+
   User,
   Role,
+
   Employee,
-  Payroll,
-  EmployeeSalary,
-  Attendance,
   EmployeeOnboarding,
+  EmployeeSalary,
   EmployeeLeave,
+  Attendance,
+  Payroll,
+
   Client,
   Project,
+
+  BRD,
+  BRDVersion,
+  BRDReview,
 };

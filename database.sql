@@ -553,3 +553,101 @@ CREATE TABLE projects (
         )
 );
 
+
+CREATE TABLE brds (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL,
+    company_id INTEGER NOT NULL,
+    client_id INTEGER NOT NULL
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(40) NOT NULL DEFAULT 'DRAFT',
+    created_by INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_brds_project
+        FOREIGN KEY (project_id)
+        REFERENCES projects(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brds_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brds_client
+        FOREIGN KEY (client_id)
+        REFERENCES clients(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT fk_brds_created_by
+        FOREIGN KEY (created_by)
+        REFERENCES users(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT chk_brds_status
+        CHECK (
+            status IN (
+                'DRAFT',
+                'PENDING_ADMIN_APPROVAL',
+                'ADMIN_REJECTED',
+                'PENDING_CLIENT_APPROVAL',
+                'CLIENT_REJECTED',
+                'APPROVED'
+            )
+        )
+);
+
+CREATE TABLE brd_versions (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    brd_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_url TEXT NOT NULL,
+    storage_key TEXT,
+    mime_type VARCHAR(100),
+    file_size BIGINT,
+    uploaded_by INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_brd_versions_brd
+        FOREIGN KEY (brd_id)
+        REFERENCES brds(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brd_versions_uploaded_by
+        FOREIGN KEY (uploaded_by)
+        REFERENCES users(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT uq_brd_version
+        UNIQUE (brd_id, version)
+);
+
+
+CREATE TABLE brd_reviews (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    brd_id INTEGER NOT NULL,
+    brd_version_id INTEGER NOT NULL,
+    reviewer_id INTEGER NOT NULL,
+    reviewer_role VARCHAR(30) NOT NULL,
+    action VARCHAR(30) NOT NULL,
+    message TEXT,
+    reviewed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_brd_reviews_brd
+        FOREIGN KEY (brd_id)
+        REFERENCES brds(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brd_reviews_version
+        FOREIGN KEY (brd_version_id)
+        REFERENCES brd_versions(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brd_reviews_reviewer
+        FOREIGN KEY (reviewer_id)
+        REFERENCES users(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT chk_brd_reviews_role
+        CHECK (
+            reviewer_role IN ('admin', 'client')
+        ),
+    CONSTRAINT chk_brd_reviews_action
+        CHECK (
+            action IN ('APPROVED', 'REJECTED')
+        )
+);

@@ -22,7 +22,9 @@ const internshipProbationRoutes = require("./routes/internshipProbationRoutes");
 const adminHrmsRoutes = require("./routes/adminHrmsRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const projectRoutes = require("./routes/projectRoutes");
-
+const brdRoutes = require("./routes/brdRoutes");
+const path = require("path");
+const authenticate = require("./middleware/authenticate");
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
 const app = express();
@@ -63,6 +65,7 @@ app.use("/api/internship-probation", internshipProbationRoutes);
 app.use("/api/admin/hrms", adminHrmsRoutes);
 app.use("/api/clients", clientRoutes);
 app.use("/api/admin/projects", projectRoutes);
+app.use("/api/brds", brdRoutes);
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
