@@ -6,6 +6,9 @@ const Employee = require("../models/Employee");
 const User = require("../models/User");
 const Role = require("../models/Role");
 
+const MAX_ROWS = 1000; // safety cap until the list gets pagination
+const DUE_SOON_DAYS = 14;
+// A project is "closed" once it's in one of these — no overdue warnings
 const CLOSED_STATUSES = ["Completed", "Cancelled"];
 const DELETABLE_STATUSES = ["Planning", "Cancelled"];
 const DUE_SOON_DAYS = 14;
@@ -52,24 +55,41 @@ const fullName = (firstName, lastName) => {
   return [firstName, lastName].filter(Boolean).join(" ");
 };
 
-const daysBetween = (from, to) => {
-  return Math.round(
-    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
-      86400000,
-  );
-};
+const daysBetween = (from, to) =>
+  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
 
-// --------------------------------------------------
-// Project response
-// --------------------------------------------------
+const select = (sql, replacements, transaction) =>
+  sequelize.query(sql, { replacements, type: QueryTypes.SELECT, transaction });
 
-const formatProject = (project) => {
-  const today = getToday();
+const LIST_SQL = `
+  SELECT p.uuid, p.name, p.tier, p.status, p.progress, p.description,
+         p.start_date        AS "startDate",
+         p.deadline,
+         p.internal_deadline AS "internalDeadline",
+         p.created_at        AS "createdAt",
+         p.updated_at        AS "updatedAt",
+         c.uuid              AS "clientUuid",
+         c.phone             AS "clientPhone",
+         cu.first_name       AS "clientFirstName",
+         cu.last_name        AS "clientLastName",
+         cu.email            AS "clientEmail",
+         le.uuid             AS "leadUuid",
+         lu.first_name       AS "leadFirstName",
+         lu.last_name        AS "leadLastName",
+         lu.email            AS "leadEmail"
+    FROM projects p
+    -- A client IS a user (clients.user_id): name + email live on users
+    JOIN clients c         ON c.id = p.client_id
+    JOIN users cu          ON cu.id = c.user_id
+    LEFT JOIN employees le ON le.id = p.project_lead_id
+    LEFT JOIN users lu     ON lu.id = le.user_id
+   WHERE p.company_id = :companyId
+`;
 
-  const deadline = dateOnly(project.deadline);
-
-  const isOpen = !CLOSED_STATUSES.includes(project.status);
-
+function toResponse(row) {
+  const today = todayIst();
+  const deadline = dateOnly(row.deadline);
+  const isOpen = !CLOSED_STATUSES.includes(row.status);
   const daysLeft = isOpen && deadline ? daysBetween(today, deadline) : null;
 
   return {
@@ -92,41 +112,15 @@ const formatProject = (project) => {
     isOverdue: daysLeft !== null && daysLeft < 0,
 
     isDueSoon: daysLeft !== null && daysLeft >= 0 && daysLeft <= DUE_SOON_DAYS,
-
-    canDelete: DELETABLE_STATUSES.includes(project.status),
-
-    client: project.client
-      ? {
-          uuid: project.client.uuid,
-          name: project.client.user
-            ? fullName(
-                project.client.user.firstName || project.client.user.first_name,
-                project.client.user.lastName || project.client.user.last_name,
-              )
-            : null,
-          contactPerson: project.client.user
-            ? fullName(
-                project.client.user.firstName || project.client.user.first_name,
-                project.client.user.lastName || project.client.user.last_name,
-              )
-            : null,
-          email: project.client.user?.email || null,
-        }
-      : null,
-
-    projectLead: project.projectLead
-      ? {
-          uuid: project.projectLead.uuid,
-          fullName: project.projectLead.user
-            ? fullName(
-                project.projectLead.user.firstName ||
-                  project.projectLead.user.first_name,
-                project.projectLead.user.lastName ||
-                  project.projectLead.user.last_name,
-              )
-            : null,
-          email: project.projectLead.user?.email || null,
-        }
+    canDelete: DELETABLE_STATUSES.includes(row.status),
+    client: {
+      uuid: row.clientUuid,
+      name: fullName(row.clientFirstName, row.clientLastName),
+      email: row.clientEmail,
+      phone: row.clientPhone,
+    },
+    projectLead: row.leadUuid
+      ? { uuid: row.leadUuid, fullName: fullName(row.leadFirstName, row.leadLastName), email: row.leadEmail }
       : null,
   };
 };
@@ -138,111 +132,41 @@ const formatProject = (project) => {
 const prepareProjectData = async (companyId, data, currentProject = null) => {
   const errors = {};
 
-  const {
-    clientUuid,
-    projectLeadUuid,
-    name,
-    tier,
-    startDate,
-    deadline,
-    internalDeadline,
-    status,
-    progress,
-    description,
-  } = data;
+  // Client: active client (client row + its user) of THIS company,
+  // or the project's current client even if since deactivated
+  const [client] = await select(
+    `SELECT c.id
+       FROM clients c
+       JOIN users u ON u.id = c.user_id
+      WHERE c.uuid = :clientUuid AND c.company_id = :companyId
+        AND ((c.is_active = TRUE AND u.is_active = TRUE) OR c.id = :currentClientId)`,
+    { clientUuid: data.clientUuid, companyId, currentClientId: current?.clientId ?? -1 },
+    transaction,
+  );
+  if (!client) errors.clientUuid = "Select an active client from the list";
 
-  // --------------------------------------------------
-  // Client
-  // --------------------------------------------------
-
-  const clientWhere = {
-    uuid: clientUuid,
-    companyId,
-    isActive: true,
-  };
-
-  // During update, current client is still allowed
-  if (currentProject?.clientId) {
-    clientWhere[Op.or] = [
-      {
-        isActive: true,
-      },
-      {
-        id: currentProject.clientId,
-      },
-    ];
+  // Lead: an ACTIVE DEVELOPER employee of THIS company (or the project's
+  // current lead, even if they've since left / changed role).
+  // project_lead_id stores employees.id — the UUID from the form is
+  // looked up here, never trusted as an id.
+  let leadId = null;
+  if (data.projectLeadUuid) {
+    const [lead] = await select(
+      `SELECT e.id
+         FROM employees e
+         JOIN users u ON u.id = e.user_id
+         JOIN roles r ON r.id = u.role_id
+        WHERE e.uuid = :leadUuid AND e.company_id = :companyId
+          AND (
+                (r.name = 'developer' AND e.employment_status <> 'Exited' AND u.is_active = TRUE)
+                OR e.id = :currentLeadId
+              )`,
+      { leadUuid: data.projectLeadUuid, companyId, currentLeadId: current?.projectLeadId ?? -1 },
+      transaction,
+    );
+    if (!lead) errors.projectLeadUuid = "Select an active developer as project lead";
+    else leadId = lead.id;
   }
-
-  const client = await Client.findOne({
-    where: clientWhere,
-  });
-
-  if (!client) {
-    errors.clientUuid = "Select an active client from the list";
-  }
-
-  // --------------------------------------------------
-  // Project Lead
-  // --------------------------------------------------
-
-  let projectLeadId = null;
-
-  if (projectLeadUuid) {
-    const leadWhere = {
-      uuid: projectLeadUuid,
-      companyId,
-      employmentStatus: {
-        [Op.ne]: "Exited",
-      },
-    };
-
-    if (currentProject?.projectLeadId) {
-      leadWhere[Op.or] = [
-        {
-          employmentStatus: {
-            [Op.ne]: "Exited",
-          },
-        },
-        {
-          id: currentProject.projectLeadId,
-        },
-      ];
-    }
-
-    const projectLead = await Employee.findOne({
-      where: leadWhere,
-
-      include: [
-        {
-          model: User,
-          as: "user",
-          where: {
-            isActive: true,
-          },
-
-          include: [
-            {
-              model: Role,
-              as: "role",
-              where: {
-                name: "project_lead",
-              },
-            },
-          ],
-        },
-      ],
-    });
-
-    if (!projectLead) {
-      errors.projectLeadUuid = "Select a project lead from the list";
-    } else {
-      projectLeadId = projectLead.id;
-    }
-  }
-
-  // --------------------------------------------------
-  // Dates
-  // --------------------------------------------------
 
   const formattedStartDate = toDateOrNull(startDate);
 
@@ -399,115 +323,47 @@ const projectIncludes = [
   },
 ];
 
-// --------------------------------------------------
-// Get project options
-// --------------------------------------------------
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
-const getProjectOptions = async (companyId) => {
-  if (!companyId) {
-    throw createError("Company ID is required", 400);
-  }
+// Dropdown data for the form: active clients + available project leads
+async function getOptions(companyId) {
+  const clients = await select(
+    `SELECT c.uuid, u.first_name AS "firstName", u.last_name AS "lastName", u.email
+       FROM clients c
+       JOIN users u ON u.id = c.user_id
+      WHERE c.company_id = :companyId
+        AND c.is_active = TRUE
+        AND u.is_active = TRUE
+      ORDER BY u.first_name, u.last_name`,
+    { companyId },
+  );
 
-  const clients = await Client.findAll({
-    where: {
-      companyId,
-      isActive: true,
-    },
-
-    include: [
-      {
-        model: User,
-        as: "user",
-
-        attributes: [
-          "id",
-          "firstName",
-          "lastName",
-          "first_name",
-          "last_name",
-          "email",
-        ],
-      },
-    ],
-
-    order: [["id", "ASC"]],
-  });
-
-  const projectLeads = await Employee.findAll({
-    where: {
-      companyId,
-
-      employmentStatus: {
-        [Op.ne]: "Exited",
-      },
-    },
-
-    include: [
-      {
-        model: User,
-        as: "user",
-
-        where: {
-          isActive: true,
-        },
-
-        attributes: [
-          "id",
-          "firstName",
-          "lastName",
-          "first_name",
-          "last_name",
-          "email",
-        ],
-
-        include: [
-          {
-            model: Role,
-            as: "role",
-
-            where: {
-              name: "project_lead",
-            },
-
-            attributes: ["id", "name"],
-          },
-        ],
-      },
-    ],
-  });
+  // Project lead = an active DEVELOPER employee (senior's rule)
+  const projectLeads = await select(
+    `SELECT e.uuid, u.first_name AS "firstName", u.last_name AS "lastName", u.email
+       FROM employees e
+       JOIN users u ON u.id = e.user_id
+       JOIN roles r ON r.id = u.role_id
+      WHERE e.company_id = :companyId
+        AND r.name = 'developer'
+        AND e.employment_status <> 'Exited'
+        AND u.is_active = TRUE
+      ORDER BY u.first_name, u.last_name`,
+    { companyId },
+  );
 
   return {
     clients: clients.map((client) => ({
       uuid: client.uuid,
-
-      name: client.user
-        ? fullName(
-            client.user.firstName || client.user.first_name,
-            client.user.lastName || client.user.last_name,
-          )
-        : null,
-
-      contactPerson: client.user
-        ? fullName(
-            client.user.firstName || client.user.first_name,
-            client.user.lastName || client.user.last_name,
-          )
-        : null,
-
-      email: client.user?.email || null,
+      name: fullName(client.firstName, client.lastName),
+      email: client.email,
     })),
-
-    projectLeads: projectLeads.map((employee) => ({
-      uuid: employee.uuid,
-
-      fullName: employee.user
-        ? fullName(
-            employee.user.firstName || employee.user.first_name,
-            employee.user.lastName || employee.user.last_name,
-          )
-        : null,
-
-      email: employee.user?.email || null,
+    projectLeads: projectLeads.map((lead) => ({
+      uuid: lead.uuid,
+      fullName: fullName(lead.firstName, lead.lastName),
+      email: lead.email,
     })),
   };
 };

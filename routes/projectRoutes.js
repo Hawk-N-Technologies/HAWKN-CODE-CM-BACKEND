@@ -12,6 +12,7 @@ const {
 const router = express.Router();
 
 // Admin-only (Project Lead pages will get their own routes later)
+router.use(authenticate(["admin", "bde"]));
 
 // Dropdown data: active clients + project leads — keep ABOVE "/:uuid"
 router.get(
