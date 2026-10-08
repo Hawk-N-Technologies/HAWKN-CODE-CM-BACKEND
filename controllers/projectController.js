@@ -1,5 +1,5 @@
 const Joi = require("joi");
-const projectService = require("../services/projectServics");
+const projectService = require("../services/projectService");
 const logger = require("../utils/logger");
 
 // --------------------------------------------------
