@@ -1,335 +1,862 @@
-const { QueryTypes } = require("@sequelize/core");
-const sequelize = require("../config/db");
+const { Op } = require("@sequelize/core");
+
 const Project = require("../models/Project");
+const Client = require("../models/Client");
+const Employee = require("../models/Employee");
+const User = require("../models/User");
+const Role = require("../models/Role");
+
 const logger = require("../utils/logger");
 
-const MAX_ROWS = 1000; // safety cap until the list gets pagination
+// --------------------------------------------------
+// Constants
+// --------------------------------------------------
+
+const MAX_ROWS = 1000;
+
 const DUE_SOON_DAYS = 14;
-// A project is "closed" once it's in one of these — no overdue warnings
+
 const CLOSED_STATUSES = ["Completed", "Cancelled"];
-// Only projects that never really started can be deleted
+
 const DELETABLE_STATUSES = ["Planning", "Cancelled"];
 
-// ---------------------------------------------------------------------------
+// --------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
+// --------------------------------------------------
 
-function httpError(statusCode, message, details) {
+function createError(message, statusCode = 400, errors = null) {
   const error = new Error(message);
+
   error.statusCode = statusCode;
-  if (details) error.details = details;
+
+  if (errors) {
+    error.errors = errors;
+  }
+
   return error;
 }
 
-// Today in India as "YYYY-MM-DD" (the company works in IST)
-const todayIst = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+function getToday() {
+  const today = new Date();
 
-// Joi date (Date object) / "" / null → "YYYY-MM-DD" or null
-const toDateOrNull = (value) => (value ? new Date(value).toISOString().slice(0, 10) : null);
-const dateOnly = (value) => (value ? String(value).slice(0, 10) : null);
-const fullName = (first, last) => [first, last].filter(Boolean).join(" ");
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
 
-const daysBetween = (from, to) =>
-  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+  return `${year}-${month}-${day}`;
+}
 
-const select = (sql, replacements, transaction) =>
-  sequelize.query(sql, { replacements, type: QueryTypes.SELECT, transaction });
+function toDateOrNull(value) {
+  if (!value) {
+    return null;
+  }
 
-const LIST_SQL = `
-  SELECT p.uuid, p.name, p.tier, p.status, p.progress, p.description,
-         p.start_date        AS "startDate",
-         p.deadline,
-         p.internal_deadline AS "internalDeadline",
-         p.created_at        AS "createdAt",
-         p.updated_at        AS "updatedAt",
-         c.uuid              AS "clientUuid",
-         c.phone             AS "clientPhone",
-         cu.first_name       AS "clientFirstName",
-         cu.last_name        AS "clientLastName",
-         cu.email            AS "clientEmail",
-         le.uuid             AS "leadUuid",
-         lu.first_name       AS "leadFirstName",
-         lu.last_name        AS "leadLastName",
-         lu.email            AS "leadEmail"
-    FROM projects p
-    -- A client IS a user (clients.user_id): name + email live on users
-    JOIN clients c         ON c.id = p.client_id
-    JOIN users cu          ON cu.id = c.user_id
-    LEFT JOIN employees le ON le.id = p.project_lead_id
-    LEFT JOIN users lu     ON lu.id = le.user_id
-   WHERE p.company_id = :companyId
-`;
+  const date = new Date(value);
 
-function toResponse(row) {
-  const today = todayIst();
-  const deadline = dateOnly(row.deadline);
-  const isOpen = !CLOSED_STATUSES.includes(row.status);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toISOString().split("T")[0];
+}
+
+function dateOnly(value) {
+  if (!value) {
+    return null;
+  }
+
+  return String(value).slice(0, 10);
+}
+
+function fullName(firstName, lastName) {
+  return [firstName, lastName].filter(Boolean).join(" ");
+}
+
+function daysBetween(from, to) {
+  return Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+      86400000,
+  );
+}
+
+// --------------------------------------------------
+// Project Includes
+// --------------------------------------------------
+
+const projectIncludes = [
+  {
+    model: Client,
+    as: "client",
+    required: true,
+
+    include: [
+      {
+        model: User,
+        as: "user",
+        required: true,
+
+        attributes: [
+          "id",
+          "firstName",
+          "lastName",
+          "first_name",
+          "last_name",
+          "email",
+        ],
+      },
+    ],
+  },
+
+  {
+    model: Employee,
+    as: "projectLead",
+    required: false,
+
+    include: [
+      {
+        model: User,
+        as: "user",
+        required: true,
+
+        attributes: [
+          "id",
+          "firstName",
+          "lastName",
+          "first_name",
+          "last_name",
+          "email",
+        ],
+      },
+    ],
+  },
+];
+
+// --------------------------------------------------
+// Format Project Response
+// --------------------------------------------------
+
+function formatProject(project) {
+  const today = getToday();
+
+  const deadline = dateOnly(project.deadline);
+
+  const isOpen = !CLOSED_STATUSES.includes(project.status);
+
   const daysLeft = isOpen && deadline ? daysBetween(today, deadline) : null;
 
+  const client = project.client;
+
+  const projectLead = project.projectLead;
+
   return {
-    uuid: row.uuid,
-    name: row.name,
-    tier: row.tier,
-    status: row.status,
-    progress: Number(row.progress),
-    description: row.description,
-    startDate: dateOnly(row.startDate),
+    uuid: project.uuid,
+
+    name: project.name,
+
+    tier: project.tier,
+
+    status: project.status,
+
+    progress: Number(project.progress),
+
+    description: project.description,
+
+    startDate: dateOnly(project.startDate),
+
     deadline,
-    internalDeadline: dateOnly(row.internalDeadline),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    // Only open projects with a deadline can be late
+
+    internalDeadline: dateOnly(project.internalDeadline),
+
+    createdAt: project.createdAt,
+
+    updatedAt: project.updatedAt,
+
     daysLeft,
+
     isOverdue: daysLeft !== null && daysLeft < 0,
+
     isDueSoon: daysLeft !== null && daysLeft >= 0 && daysLeft <= DUE_SOON_DAYS,
-    canDelete: DELETABLE_STATUSES.includes(row.status),
-    client: {
-      uuid: row.clientUuid,
-      name: fullName(row.clientFirstName, row.clientLastName),
-      email: row.clientEmail,
-      phone: row.clientPhone,
-    },
-    projectLead: row.leadUuid
-      ? { uuid: row.leadUuid, fullName: fullName(row.leadFirstName, row.leadLastName), email: row.leadEmail }
+
+    canDelete: DELETABLE_STATUSES.includes(project.status),
+
+    client: client
+      ? {
+          uuid: client.uuid,
+
+          name: client.user
+            ? fullName(
+                client.user.firstName || client.user.first_name,
+                client.user.lastName || client.user.last_name,
+              )
+            : null,
+
+          contactPerson: client.user
+            ? fullName(
+                client.user.firstName || client.user.first_name,
+                client.user.lastName || client.user.last_name,
+              )
+            : null,
+
+          email: client.user?.email || null,
+
+          phone: client.phone || null,
+        }
+      : null,
+
+    projectLead: projectLead
+      ? {
+          uuid: projectLead.uuid,
+
+          fullName: projectLead.user
+            ? fullName(
+                projectLead.user.firstName || projectLead.user.first_name,
+                projectLead.user.lastName || projectLead.user.last_name,
+              )
+            : null,
+
+          email: projectLead.user?.email || null,
+        }
       : null,
   };
 }
 
-async function getOne(uuid, companyId) {
-  const [row] = await select(`${LIST_SQL} AND p.uuid = :uuid`, { companyId, uuid });
-  return row ? toResponse(row) : null;
-}
+// --------------------------------------------------
+// Prepare Project Data
+// --------------------------------------------------
 
-/**
- * Turns the request into DB-ready values and checks everything the DB
- * can't explain nicely. `current` = the project being edited (or null):
- * its existing client / lead stay allowed even if since deactivated.
- */
-async function prepare(companyId, data, current, transaction) {
+async function prepareProjectData(companyId, data, currentProject = null) {
   const errors = {};
 
-  // Client: active client (client row + its user) of THIS company,
-  // or the project's current client even if since deactivated
-  const [client] = await select(
-    `SELECT c.id
-       FROM clients c
-       JOIN users u ON u.id = c.user_id
-      WHERE c.uuid = :clientUuid AND c.company_id = :companyId
-        AND ((c.is_active = TRUE AND u.is_active = TRUE) OR c.id = :currentClientId)`,
-    { clientUuid: data.clientUuid, companyId, currentClientId: current?.clientId ?? -1 },
-    transaction,
-  );
-  if (!client) errors.clientUuid = "Select an active client from the list";
-
-  // Lead: an ACTIVE DEVELOPER employee of THIS company (or the project's
-  // current lead, even if they've since left / changed role).
-  // project_lead_id stores employees.id — the UUID from the form is
-  // looked up here, never trusted as an id.
-  let leadId = null;
-  if (data.projectLeadUuid) {
-    const [lead] = await select(
-      `SELECT e.id
-         FROM employees e
-         JOIN users u ON u.id = e.user_id
-         JOIN roles r ON r.id = u.role_id
-        WHERE e.uuid = :leadUuid AND e.company_id = :companyId
-          AND (
-                (r.name = 'developer' AND e.employment_status <> 'Exited' AND u.is_active = TRUE)
-                OR e.id = :currentLeadId
-              )`,
-      { leadUuid: data.projectLeadUuid, companyId, currentLeadId: current?.projectLeadId ?? -1 },
-      transaction,
-    );
-    if (!lead) errors.projectLeadUuid = "Select an active developer as project lead";
-    else leadId = lead.id;
-  }
-
-  const startDate = toDateOrNull(data.startDate);
-  const deadline = toDateOrNull(data.deadline);
-  const internalDeadline = toDateOrNull(data.internalDeadline);
-
-  if (startDate && deadline && deadline < startDate) {
-    errors.deadline = "Deadline can't be before the start date";
-  }
-  if (internalDeadline && startDate && internalDeadline < startDate) {
-    errors.internalDeadline = "Internal deadline can't be before the start date";
-  }
-  if (internalDeadline && deadline && internalDeadline > deadline) {
-    errors.internalDeadline = "Internal deadline should be on or before the client deadline";
-  }
-
-  if (Object.keys(errors).length) {
-    // Same shape as the validate middleware: [{ field, message }]
-    const error = httpError(400, "Validation failed.");
-    error.errors = Object.entries(errors).map(([field, message]) => ({ field, message }));
-    throw error;
-  }
-
-  // Same name twice for the same client is almost always a mistake
-  const [duplicate] = await select(
-    `SELECT 1 FROM projects
-      WHERE company_id = :companyId AND client_id = :clientId
-        AND LOWER(name) = LOWER(:name) AND id <> :currentId
-      LIMIT 1`,
-    { companyId, clientId: client.id, name: data.name, currentId: current?.id ?? -1 },
-    transaction,
-  );
-  if (duplicate) {
-    const error = httpError(409, "Validation failed.");
-    error.errors = [{ field: "name", message: "This client already has a project with this name" }];
-    throw error;
-  }
-
-  // A completed project is 100% done
-  const progress = data.status === "Completed" ? 100 : data.progress;
-
-  return {
-    clientId: client.id,
-    projectLeadId: leadId,
-    name: data.name,
-    tier: data.tier,
+  const {
+    clientUuid,
+    projectLeadUuid,
+    name,
+    tier,
     startDate,
     deadline,
     internalDeadline,
-    status: data.status,
+    status,
     progress,
-    description: data.description ? data.description.trim() || null : null,
+    description,
+  } = data;
+
+  // --------------------------------------------------
+  // Client
+  // --------------------------------------------------
+
+  const clientWhere = {
+    uuid: clientUuid,
+    companyId,
+    isActive: true,
   };
-}
 
-async function findProjectRow(uuid, companyId, transaction) {
-  const [row] = await select(
-    `SELECT id, client_id AS "clientId", project_lead_id AS "projectLeadId", status
-       FROM projects WHERE uuid = :uuid AND company_id = :companyId
-       FOR UPDATE`,
-    { uuid, companyId },
-    transaction,
-  );
-  if (!row) throw httpError(404, "Project not found");
-  return row;
-}
+  /*
+   * During update:
+   * The project's existing client can remain selected
+   * even if the client was later deactivated.
+   */
+  if (currentProject?.clientId) {
+    clientWhere[Op.or] = [
+      {
+        isActive: true,
+      },
+      {
+        id: currentProject.clientId,
+      },
+    ];
+  }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+  const client = await Client.findOne({
+    where: clientWhere,
+  });
 
-// Dropdown data for the form: active clients + available project leads
-async function getOptions(companyId) {
-  const clients = await select(
-    `SELECT c.uuid, u.first_name AS "firstName", u.last_name AS "lastName", u.email
-       FROM clients c
-       JOIN users u ON u.id = c.user_id
-      WHERE c.company_id = :companyId
-        AND c.is_active = TRUE
-        AND u.is_active = TRUE
-      ORDER BY u.first_name, u.last_name`,
-    { companyId },
-  );
+  if (!client) {
+    errors.clientUuid = "Select an active client from the list";
+  }
 
-  // Project lead = an active DEVELOPER employee (senior's rule)
-  const projectLeads = await select(
-    `SELECT e.uuid, u.first_name AS "firstName", u.last_name AS "lastName", u.email
-       FROM employees e
-       JOIN users u ON u.id = e.user_id
-       JOIN roles r ON r.id = u.role_id
-      WHERE e.company_id = :companyId
-        AND r.name = 'developer'
-        AND e.employment_status <> 'Exited'
-        AND u.is_active = TRUE
-      ORDER BY u.first_name, u.last_name`,
-    { companyId },
-  );
+  // --------------------------------------------------
+  // Project Lead
+  // --------------------------------------------------
+
+  let projectLeadId = null;
+
+  if (projectLeadUuid) {
+    const leadWhere = {
+      uuid: projectLeadUuid,
+
+      companyId,
+
+      employmentStatus: {
+        [Op.ne]: "Exited",
+      },
+    };
+
+    /*
+     * During update:
+     * Existing project lead is still allowed even if
+     * they later become inactive/exited.
+     */
+    if (currentProject?.projectLeadId) {
+      leadWhere[Op.or] = [
+        {
+          employmentStatus: {
+            [Op.ne]: "Exited",
+          },
+        },
+        {
+          id: currentProject.projectLeadId,
+        },
+      ];
+    }
+
+    const projectLead = await Employee.findOne({
+      where: leadWhere,
+
+      include: [
+        {
+          model: User,
+          as: "user",
+
+          required: true,
+
+          where: {
+            isActive: true,
+          },
+
+          include: [
+            {
+              model: Role,
+              as: "role",
+
+              required: true,
+
+              where: {
+                name: "project_lead",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!projectLead) {
+      errors.projectLeadUuid = "Select a project lead from the list";
+    } else {
+      projectLeadId = projectLead.id;
+    }
+  }
+
+  // --------------------------------------------------
+  // Dates
+  // --------------------------------------------------
+
+  const formattedStartDate = toDateOrNull(startDate);
+
+  const formattedDeadline = toDateOrNull(deadline);
+
+  const formattedInternalDeadline = toDateOrNull(internalDeadline);
+
+  // --------------------------------------------------
+  // Date Validation
+  // --------------------------------------------------
+
+  if (
+    formattedStartDate &&
+    formattedDeadline &&
+    formattedDeadline < formattedStartDate
+  ) {
+    errors.deadline = "Deadline can't be before the start date";
+  }
+
+  if (
+    formattedInternalDeadline &&
+    formattedStartDate &&
+    formattedInternalDeadline < formattedStartDate
+  ) {
+    errors.internalDeadline =
+      "Internal deadline can't be before the start date";
+  }
+
+  if (
+    formattedInternalDeadline &&
+    formattedDeadline &&
+    formattedInternalDeadline > formattedDeadline
+  ) {
+    errors.internalDeadline =
+      "Internal deadline should be on or before the client deadline";
+  }
+
+  // --------------------------------------------------
+  // Validation Errors
+  // --------------------------------------------------
+
+  if (Object.keys(errors).length > 0) {
+    throw createError(
+      "Validation failed.",
+      400,
+      Object.entries(errors).map(([field, message]) => ({
+        field,
+        message,
+      })),
+    );
+  }
+
+  // --------------------------------------------------
+  // Duplicate Project Name
+  // --------------------------------------------------
+
+  const duplicateWhere = {
+    companyId,
+
+    clientId: client.id,
+
+    name: {
+      [Op.iLike]: name,
+    },
+  };
+
+  /*
+   * During update, don't compare the project
+   * against itself.
+   */
+  if (currentProject?.id) {
+    duplicateWhere.id = {
+      [Op.ne]: currentProject.id,
+    };
+  }
+
+  const duplicateProject = await Project.findOne({
+    where: duplicateWhere,
+  });
+
+  if (duplicateProject) {
+    throw createError("Validation failed.", 409, [
+      {
+        field: "name",
+        message: "This client already has a project with this name",
+      },
+    ]);
+  }
+
+  // --------------------------------------------------
+  // Completed Project = 100%
+  // --------------------------------------------------
+
+  const finalProgress = status === "Completed" ? 100 : progress;
+
+  // --------------------------------------------------
+  // DB Ready Values
+  // --------------------------------------------------
 
   return {
-    clients: clients.map((client) => ({
-      uuid: client.uuid,
-      name: fullName(client.firstName, client.lastName),
-      email: client.email,
-    })),
-    projectLeads: projectLeads.map((lead) => ({
-      uuid: lead.uuid,
-      fullName: fullName(lead.firstName, lead.lastName),
-      email: lead.email,
-    })),
+    clientId: client.id,
+
+    projectLeadId,
+
+    name,
+
+    tier,
+
+    startDate: formattedStartDate,
+
+    deadline: formattedDeadline,
+
+    internalDeadline: formattedInternalDeadline,
+
+    status,
+
+    progress: finalProgress,
+
+    description: description?.trim() || null,
   };
 }
+
+// --------------------------------------------------
+// Get Project Options
+// --------------------------------------------------
+
+async function getOptions(companyId) {
+  try {
+    if (!companyId) {
+      throw createError("Company ID is required", 400);
+    }
+
+    // --------------------------------------------------
+    // Clients
+    // --------------------------------------------------
+
+    const clients = await Client.findAll({
+      where: {
+        companyId,
+        isActive: true,
+      },
+
+      include: [
+        {
+          model: User,
+          as: "user",
+
+          required: true,
+
+          where: {
+            isActive: true,
+          },
+
+          attributes: [
+            "id",
+            "firstName",
+            "lastName",
+            "first_name",
+            "last_name",
+            "email",
+          ],
+        },
+      ],
+
+      order: [["id", "ASC"]],
+    });
+
+    // --------------------------------------------------
+    // Project Leads
+    // --------------------------------------------------
+
+    const projectLeads = await Employee.findAll({
+      where: {
+        companyId,
+
+        employmentStatus: {
+          [Op.ne]: "Exited",
+        },
+      },
+
+      include: [
+        {
+          model: User,
+          as: "user",
+
+          required: true,
+
+          where: {
+            isActive: true,
+          },
+
+          attributes: [
+            "id",
+            "firstName",
+            "lastName",
+            "first_name",
+            "last_name",
+            "email",
+          ],
+
+          include: [
+            {
+              model: Role,
+              as: "role",
+
+              required: true,
+
+              where: {
+                name: "developer",
+              },
+
+              attributes: ["id", "name"],
+            },
+          ],
+        },
+      ],
+
+      order: [["id", "ASC"]],
+    });
+
+    return {
+      clients: clients.map((client) => ({
+        uuid: client.uuid,
+
+        name: client.user
+          ? fullName(
+              client.user.firstName || client.user.first_name,
+              client.user.lastName || client.user.last_name,
+            )
+          : null,
+
+        contactPerson: client.user
+          ? fullName(
+              client.user.firstName || client.user.first_name,
+              client.user.lastName || client.user.last_name,
+            )
+          : null,
+
+        email: client.user?.email || null,
+      })),
+
+      projectLeads: projectLeads.map((employee) => ({
+        uuid: employee.uuid,
+
+        fullName: employee.user
+          ? fullName(
+              employee.user.firstName || employee.user.first_name,
+              employee.user.lastName || employee.user.last_name,
+            )
+          : null,
+
+        email: employee.user?.email || null,
+      })),
+    };
+  } catch (error) {
+    logger.error("Failed to fetch project options", {
+      companyId,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    throw error;
+  }
+}
+
+// --------------------------------------------------
+// Get All Projects
+// --------------------------------------------------
 
 async function listProjects(companyId, { status } = {}) {
   try {
-    const rows = await select(
-      `${LIST_SQL}
-       ${status ? "AND p.status = :status" : ""}
-       ORDER BY (p.status IN ('Completed', 'Cancelled')), p.deadline ASC NULLS LAST, p.created_at DESC
-       LIMIT :limit`,
-      { companyId, status: status ?? null, limit: MAX_ROWS },
-    );
+    if (!companyId) {
+      throw createError("Company ID is required", 400);
+    }
 
-    logger.info("Projects fetched", { companyId, count: rows.length });
-    return rows.map(toResponse);
+    const where = {
+      companyId,
+    };
+
+    if (status) {
+      where.status = status;
+    }
+
+    const projects = await Project.findAll({
+      where,
+
+      include: projectIncludes,
+
+      order: [
+        ["status", "ASC"],
+        ["deadline", "ASC"],
+        ["createdAt", "DESC"],
+      ],
+
+      limit: MAX_ROWS,
+    });
+
+    logger.info("Projects fetched", {
+      companyId,
+      count: projects.length,
+    });
+
+    return projects.map(formatProject);
   } catch (error) {
-    logger.error("Failed to fetch projects", { companyId, error: error.message, stack: error.stack });
+    logger.error("Failed to fetch projects", {
+      companyId,
+      error: error.message,
+      stack: error.stack,
+    });
+
     throw error;
   }
 }
 
+// --------------------------------------------------
+// Get Single Project
+// --------------------------------------------------
+
 async function getProject(uuid, companyId) {
-  const project = await getOne(uuid, companyId);
-  if (!project) throw httpError(404, "Project not found");
-  return project;
+  try {
+    if (!companyId) {
+      throw createError("Company ID is required", 400);
+    }
+
+    if (!uuid) {
+      throw createError("Project UUID is required", 400);
+    }
+
+    const project = await Project.findOne({
+      where: {
+        uuid,
+        companyId,
+      },
+
+      include: projectIncludes,
+    });
+
+    if (!project) {
+      throw createError("Project not found", 404);
+    }
+
+    return formatProject(project);
+  } catch (error) {
+    logger.error("Failed to fetch project", {
+      companyId,
+      uuid,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    throw error;
+  }
 }
+
+// --------------------------------------------------
+// Create Project
+// --------------------------------------------------
 
 async function createProject(companyId, data) {
   try {
-    const uuid = await sequelize.transaction(async (transaction) => {
-      const values = await prepare(companyId, data, null, transaction);
-      const project = await Project.create({ companyId, ...values }, { transaction });
-      return project.uuid;
+    if (!companyId) {
+      throw createError("Company ID is required", 400);
+    }
+
+    if (!data || typeof data !== "object") {
+      throw createError("Project data is required", 400);
+    }
+
+    if (!data.name?.trim()) {
+      throw createError("Project name is required", 400);
+    }
+
+    const values = await prepareProjectData(companyId, data);
+
+    const project = await Project.create({
+      companyId,
+      ...values,
     });
 
-    logger.info("Project created", { companyId, uuid });
-    return getOne(uuid, companyId);
+    logger.info("Project created", {
+      companyId,
+      uuid: project.uuid,
+    });
+
+    return getProject(project.uuid, companyId);
   } catch (error) {
-    logger.error("Failed to create project", { companyId, error: error.message });
+    logger.error("Failed to create project", {
+      companyId,
+      error: error.message,
+      stack: error.stack,
+    });
+
     throw error;
   }
 }
+
+// --------------------------------------------------
+// Update Project
+// --------------------------------------------------
 
 async function updateProject(uuid, companyId, data) {
   try {
-    await sequelize.transaction(async (transaction) => {
-      const current = await findProjectRow(uuid, companyId, transaction);
-      const values = await prepare(companyId, data, current, transaction);
-      await Project.update(values, { where: { id: current.id }, transaction });
+    if (!companyId) {
+      throw createError("Company ID is required", 400);
+    }
+
+    if (!uuid) {
+      throw createError("Project UUID is required", 400);
+    }
+
+    if (!data || typeof data !== "object") {
+      throw createError("Project data is required", 400);
+    }
+
+    if (!data.name?.trim()) {
+      throw createError("Project name is required", 400);
+    }
+
+    const project = await Project.findOne({
+      where: {
+        uuid,
+        companyId,
+      },
     });
 
-    logger.info("Project updated", { companyId, uuid });
-    return getOne(uuid, companyId);
+    if (!project) {
+      throw createError("Project not found", 404);
+    }
+
+    const values = await prepareProjectData(companyId, data, project);
+
+    await project.update(values);
+
+    logger.info("Project updated", {
+      companyId,
+      uuid,
+    });
+
+    return getProject(uuid, companyId);
   } catch (error) {
-    logger.error("Failed to update project", { companyId, uuid, error: error.message });
+    logger.error("Failed to update project", {
+      companyId,
+      uuid,
+      error: error.message,
+      stack: error.stack,
+    });
+
     throw error;
   }
 }
 
-// Only Planning / Cancelled — anything further along is real work history
+// --------------------------------------------------
+// Delete Project
+// --------------------------------------------------
+
 async function deleteProject(uuid, companyId) {
   try {
-    await sequelize.transaction(async (transaction) => {
-      const current = await findProjectRow(uuid, companyId, transaction);
-      if (!DELETABLE_STATUSES.includes(current.status)) {
-        throw httpError(
-          409,
-          `A project that is "${current.status}" can't be deleted — only Planning or Cancelled projects can. Cancel it first if it's no longer needed.`,
-        );
-      }
-      await Project.destroy({ where: { id: current.id }, transaction });
+    if (!companyId) {
+      throw createError("Company ID is required", 400);
+    }
+
+    if (!uuid) {
+      throw createError("Project UUID is required", 400);
+    }
+
+    const project = await Project.findOne({
+      where: {
+        uuid,
+        companyId,
+      },
     });
 
-    logger.info("Project deleted", { companyId, uuid });
+    if (!project) {
+      throw createError("Project not found", 404);
+    }
+
+    if (!DELETABLE_STATUSES.includes(project.status)) {
+      throw createError(
+        `A project that is "${project.status}" can't be deleted — only Planning or Cancelled projects can. Cancel it first if it's no longer needed.`,
+        409,
+      );
+    }
+
+    await project.destroy();
+
+    logger.info("Project deleted", {
+      companyId,
+      uuid,
+    });
+
+    return {
+      message: "Project deleted successfully",
+    };
   } catch (error) {
-    logger.error("Failed to delete project", { companyId, uuid, error: error.message });
+    logger.error("Failed to delete project", {
+      companyId,
+      uuid,
+      error: error.message,
+      stack: error.stack,
+    });
+
     throw error;
   }
 }
+
+// --------------------------------------------------
+// Exports
+// --------------------------------------------------
 
 module.exports = {
   getOptions,
