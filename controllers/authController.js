@@ -76,8 +76,41 @@ async function getMe(req, res, next) {
     return next(error);
   }
 }
+
+async function getMyModes(req, res, next) {
+  try {
+    const { userId, companyId, role } = req.user;
+
+    const modes = await authService.getAvailableModes(userId, companyId, role);
+
+    return res.status(200).json({
+      success: true,
+      data: { modes },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getMee(req, res, next) {
+  try {
+    const allowed = await authService.checkProjectLeadAccess(
+      req.user.userId,
+      req.user.companyId,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: { allowed },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
 module.exports = {
   login,
   logout,
   getMe,
+  getMyModes,
+  getMee,
 };

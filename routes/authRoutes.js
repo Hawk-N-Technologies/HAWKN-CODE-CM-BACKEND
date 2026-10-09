@@ -11,5 +11,7 @@ router.get(
   authController.getMe,
 );
 router.post("/logout", authController.logout);
+router.get("/me/modes", authenticate(["developer"]), authController.getMyModes);
+router.get("/mee", authenticate(), authController.getMee);
 
 module.exports = router;

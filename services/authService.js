@@ -4,6 +4,9 @@ const User = require("../models/User");
 const Role = require("../models/Role");
 const Company = require("../models/Company");
 const logger = require("../utils/logger");
+const Employee = require("../models/Employee");
+const Project = require("../models/Project");
+const ProjectOperation = require("../models/ProjectOperation");
 
 async function login(email, password) {
   try {
@@ -157,7 +160,83 @@ async function getMe(userId) {
   }
 }
 
+async function getAvailableModes(userId, companyId, role) {
+  const modes = [];
+
+  if (role?.toLowerCase() === "developer") {
+    modes.push("developer");
+
+    const employee = await Employee.findOne({
+      where: {
+        userId,
+        companyId,
+        employmentStatus: "Active",
+      },
+      attributes: ["id"],
+    });
+
+    if (employee) {
+      const [projectLeadProject, operationsPlan] = await Promise.all([
+        Project.findOne({
+          where: {
+            companyId,
+            projectLeadId: employee.id,
+          },
+          attributes: ["id"],
+        }),
+        ProjectOperation.findOne({
+          where: {
+            companyId,
+            projectLeadId: employee.id,
+          },
+          attributes: ["id"],
+        }),
+      ]);
+
+      if (projectLeadProject || operationsPlan) {
+        modes.push("project_lead");
+      }
+    }
+  }
+
+  return modes;
+}
+
+async function checkProjectLeadAccess(userId, companyId) {
+  const employee = await Employee.findOne({
+    where: {
+      userId,
+      companyId,
+      employmentStatus: "Active",
+    },
+    attributes: ["id", "uuid"],
+  });
+
+  if (!employee) return false;
+
+  const [project, operation] = await Promise.all([
+    Project.findOne({
+      where: {
+        companyId,
+        projectLeadId: employee.id,
+      },
+      attributes: ["id"],
+    }),
+
+    ProjectOperation.findOne({
+      where: {
+        companyId,
+        projectLeadId: employee.id,
+      },
+      attributes: ["id"],
+    }),
+  ]);
+
+  return Boolean(project || operation);
+}
 module.exports = {
   login,
   getMe,
+  getAvailableModes,
+  checkProjectLeadAccess,
 };
