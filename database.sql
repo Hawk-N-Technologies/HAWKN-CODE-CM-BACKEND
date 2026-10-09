@@ -651,3 +651,41 @@ CREATE TABLE brd_reviews (
             action IN ('APPROVED', 'REJECTED')
         )
 );
+
+
+
+
+CREATE TABLE project_operations (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL UNIQUE
+        REFERENCES projects(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    company_id INTEGER NOT NULL
+        REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    project_lead_id INTEGER
+        REFERENCES employees(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    tester_id INTEGER
+        REFERENCES employees(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    technology_stack VARCHAR(100),
+    er_diagram_status VARCHAR(20) NOT NULL DEFAULT 'NOT_UPLOADED'
+        CHECK (er_diagram_status IN ('UPLOADED', 'NOT_UPLOADED')),
+    flowchart_status VARCHAR(20) NOT NULL DEFAULT 'NOT_UPLOADED'
+        CHECK (flowchart_status IN ('UPLOADED', 'NOT_UPLOADED')),
+    planning_status VARCHAR(20) NOT NULL DEFAULT 'NOT_STARTED'
+        CHECK (planning_status IN ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED')),
+    created_by INTEGER
+        REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    updated_by INTEGER
+        REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE project_operation_developers (
+    project_operation_id INTEGER NOT NULL
+        REFERENCES project_operations(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    employee_id INTEGER NOT NULL
+        REFERENCES employees(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_operation_id, employee_id)
+);

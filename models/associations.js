@@ -20,6 +20,8 @@ const Project = require("./Project");
 const BRD = require("./BRD");
 const BRDVersion = require("./BRDVersion");
 const BRDReview = require("./BRDReview");
+const ProjectOperation = require("./ProjectOperation");
+const ProjectOperationDeveloper = require("./ProjectOperationDeveloper");
 
 /*
 |--------------------------------------------------------------------------
@@ -472,6 +474,64 @@ BRDReview.belongsTo(User, {
   as: "reviewer",
 });
 
+/*
+|--------------------------------------------------------------------------
+| Project - Operations Plan
+|--------------------------------------------------------------------------
+*/
+
+Project.hasOne(ProjectOperation, {
+  foreignKey: "projectId",
+  as: "operationsPlan",
+});
+
+ProjectOperation.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Operations Plan - Project Lead
+|--------------------------------------------------------------------------
+*/
+
+ProjectOperation.belongsTo(Employee, {
+  foreignKey: "projectLeadId",
+  as: "projectLead",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Operations Plan - Tester
+|--------------------------------------------------------------------------
+*/
+
+ProjectOperation.belongsTo(Employee, {
+  foreignKey: "testerId",
+  as: "tester",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Operations Plan - Developers
+|--------------------------------------------------------------------------
+*/
+
+ProjectOperation.belongsToMany(Employee, {
+  through: ProjectOperationDeveloper,
+  foreignKey: "projectOperationId",
+  otherKey: "employeeId",
+  as: "developers",
+});
+
+Employee.belongsToMany(ProjectOperation, {
+  through: ProjectOperationDeveloper,
+  foreignKey: "employeeId",
+  otherKey: "projectOperationId",
+  as: "operationPlans",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -495,4 +555,7 @@ module.exports = {
   BRD,
   BRDVersion,
   BRDReview,
+
+  ProjectOperation,
+  ProjectOperationDeveloper,
 };

@@ -4,9 +4,12 @@ const BRDReview = require("../models/BRDReview");
 const Project = require("../models/Project");
 const Client = require("../models/Client");
 const User = require("../models/User");
+const Company = require("../models/Company");
 const sequelize = require("../config/db");
 const logger = require("../utils/logger");
+const { Op, Transaction } = require("@sequelize/core");
 
+const ADMIN_ROLE = "admin";
 async function uploadBRD({ projectUuid, companyId, userId, file }) {
   const transaction = await sequelize.startUnmanagedTransaction();
 
@@ -436,9 +439,424 @@ function getHistoryStatus(brdStatus, review) {
   return "Pending";
 }
 
+const getLatestVersion = async (brdId, transaction) => {
+  return BRDVersion.findOne({
+    where: { brdId },
+    order: [["version", "DESC"]],
+    transaction,
+  });
+};
+
+const getBRDIncludes = () => [
+  {
+    model: Project,
+    as: "project",
+    attributes: ["id", "uuid", "name"],
+    required: false,
+  },
+  {
+    model: Client,
+    as: "client",
+    attributes: ["id", "uuid", "userId"],
+    required: false,
+    include: [
+      {
+        model: User,
+        as: "user",
+        attributes: ["id", "uuid", "firstName", "email"],
+        required: false,
+      },
+    ],
+  },
+  {
+    model: Company,
+    as: "company",
+    attributes: ["id", "name"],
+    required: false,
+  },
+  {
+    model: User,
+    as: "creator",
+    attributes: ["id", "firstName", "lastName", "email"],
+    required: false,
+  },
+  {
+    model: BRDVersion,
+    as: "versions",
+    separate: true,
+    order: [["version", "DESC"]],
+    include: [
+      {
+        model: User,
+        as: "uploader",
+        attributes: ["id", "firstName", "lastName", "email"],
+        required: false,
+      },
+      {
+        model: BRDReview,
+        as: "reviews",
+        separate: true,
+        order: [["reviewedAt", "DESC"]],
+        include: [
+          {
+            model: User,
+            as: "reviewer",
+            attributes: ["id", "firstName", "lastName", "email"],
+            required: false,
+          },
+        ],
+      },
+    ],
+  },
+];
+
+// List BRDs for the admin approval UI.
+const getAdminBRDs = async ({ status, search }) => {
+  const where = {};
+
+  if (status && status !== "ALL") {
+    where.status = status;
+  }
+
+  if (search?.trim()) {
+    const term = `%${search.trim()}%`;
+
+    where[Op.or] = [
+      { title: { [Op.iLike]: term } },
+      { description: { [Op.iLike]: term } },
+      { uuid: { [Op.iLike]: term } },
+    ];
+  }
+
+  const brds = await BRD.findAll({
+    where,
+    include: getBRDIncludes(),
+    order: [["updatedAt", "DESC"]],
+  });
+
+  return brds;
+};
+
+// Fetch one BRD with versions and review history.
+const getAdminBRDById = async (brdId) => {
+  const brd = await BRD.findByPk(brdId, {
+    include: getBRDIncludes(),
+  });
+
+  if (!brd) {
+    const error = new Error("BRD not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return brd;
+};
+
+// Approve or reject a BRD atomically.
+const decideBRD = async ({ brdId, reviewerId, action, message }) => {
+  if (!["APPROVED", "REJECTED"].includes(action)) {
+    const error = new Error("Action must be APPROVED or REJECTED.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!reviewerId) {
+    const error = new Error("Authenticated reviewer was not found.");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  if (action === "REJECTED" && !message?.trim()) {
+    const error = new Error("A rejection reason is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return sequelize.transaction(
+    {
+      isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
+    },
+    async (transaction) => {
+      // Lock the BRD row so two admins cannot decide simultaneously.
+      const brd = await BRD.findByPk(brdId, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+
+      if (!brd) {
+        const error = new Error("BRD not found.");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      if (brd.status !== "PENDING_ADMIN_APPROVAL") {
+        const error = new Error(
+          `Cannot review a BRD with status ${brd.status}.`,
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const latestVersion = await getLatestVersion(brd.id, transaction);
+
+      if (!latestVersion) {
+        const error = new Error(
+          "Cannot review a BRD without an uploaded version.",
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const review = await BRDReview.create(
+        {
+          brdId: brd.id,
+          brdVersionId: latestVersion.id,
+          reviewerId,
+          reviewerRole: ADMIN_ROLE,
+          action,
+          message: message?.trim() || null,
+        },
+        { transaction },
+      );
+
+      // Admin approval sends the BRD to client approval.
+      // Rejection returns it to the uploader for revision.
+      const nextStatus =
+        action === "APPROVED" ? "PENDING_CLIENT_APPROVAL" : "ADMIN_REJECTED";
+
+      await brd.update({ status: nextStatus }, { transaction });
+
+      return {
+        brdId: brd.id,
+        brdUuid: brd.uuid,
+        status: nextStatus,
+        action,
+        version: latestVersion.version,
+        review,
+      };
+    },
+  );
+};
+
+const getClientBRDIncludes = () => [
+  {
+    model: Project,
+    as: "project",
+    attributes: ["id", "uuid", "name"],
+    required: false,
+  },
+  {
+    model: Client,
+    as: "client",
+    attributes: ["id", "uuid", "userId"],
+    required: true,
+    include: [
+      {
+        model: User,
+        as: "user",
+        attributes: ["id", "uuid", "firstName", "email"],
+        required: false,
+      },
+    ],
+  },
+  {
+    model: User,
+    as: "creator",
+    attributes: ["id", "firstName", "lastName", "email"],
+    required: false,
+  },
+  {
+    model: BRDVersion,
+    as: "versions",
+    separate: true,
+    order: [["version", "DESC"]],
+    include: [
+      {
+        model: User,
+        as: "uploader",
+        attributes: ["id", "firstName", "lastName", "email"],
+        required: false,
+      },
+      {
+        model: BRDReview,
+        as: "reviews",
+        separate: true,
+        order: [["reviewedAt", "DESC"]],
+        include: [
+          {
+            model: User,
+            as: "reviewer",
+            attributes: ["id", "firstName", "lastName", "email"],
+            required: false,
+          },
+        ],
+      },
+    ],
+  },
+];
+
+function createServiceError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+async function getClientForUser(userId, transaction) {
+  if (!userId) {
+    throw createServiceError("Authenticated user not found.", 401);
+  }
+
+  const client = await Client.findOne({
+    where: { userId },
+    transaction,
+  });
+
+  if (!client) {
+    throw createServiceError(
+      "No client account is associated with this user.",
+      403,
+    );
+  }
+
+  return client;
+}
+
+/**
+ * CLIENT: List only this client's BRDs.
+ */
+async function getClientBRDs(userId) {
+  const client = await getClientForUser(userId);
+
+  return BRD.findAll({
+    where: { clientId: client.id },
+    include: getClientBRDIncludes(),
+    order: [["updatedAt", "DESC"]],
+  });
+}
+
+/**
+ * CLIENT: Get one BRD, only if it belongs to this client.
+ */
+async function getClientBRDById({ brdId, userId }) {
+  const client = await getClientForUser(userId);
+
+  const brd = await BRD.findOne({
+    where: {
+      id: brdId,
+      clientId: client.id,
+    },
+    include: getClientBRDIncludes(),
+  });
+
+  if (!brd) {
+    throw createServiceError(
+      "BRD not found or you do not have access to it.",
+      404,
+    );
+  }
+
+  return brd;
+}
+
+/**
+ * CLIENT: Approve or reject the latest BRD version.
+ *
+ * Approval:
+ *   status -> APPROVED
+ *
+ * Rejection:
+ *   status -> CLIENT_REJECTED
+ *
+ * A review record and status update are committed atomically.
+ */
+async function decideClientBRD({ brdId, userId, action, message }) {
+  if (!["APPROVED", "REJECTED"].includes(action)) {
+    throw createServiceError("Action must be APPROVED or REJECTED.", 400);
+  }
+
+  if (
+    action === "REJECTED" &&
+    (typeof message !== "string" || !message.trim())
+  ) {
+    throw createServiceError("A rejection reason is required.", 400);
+  }
+
+  return sequelize.transaction(async (transaction) => {
+    const client = await getClientForUser(userId, transaction);
+
+    const brd = await BRD.findOne({
+      where: {
+        id: brdId,
+        clientId: client.id,
+      },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!brd) {
+      throw createServiceError(
+        "BRD not found or you do not have access to it.",
+        404,
+      );
+    }
+
+    if (brd.status !== "PENDING_CLIENT_APPROVAL") {
+      throw createServiceError(
+        `This BRD cannot be reviewed while its status is ${brd.status}.`,
+        409,
+      );
+    }
+
+    const latestVersion = await BRDVersion.findOne({
+      where: { brdId: brd.id },
+      order: [["version", "DESC"]],
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!latestVersion) {
+      throw createServiceError(
+        "This BRD has no uploaded version to review.",
+        409,
+      );
+    }
+
+    const review = await BRDReview.create(
+      {
+        brdId: brd.id,
+        brdVersionId: latestVersion.id,
+        reviewerId: userId,
+        reviewerRole: "client",
+        action,
+        message: message?.trim() || null,
+      },
+      { transaction },
+    );
+
+    const nextStatus = action === "APPROVED" ? "APPROVED" : "CLIENT_REJECTED";
+
+    await brd.update({ status: nextStatus }, { transaction });
+
+    return {
+      brdId: brd.id,
+      brdUuid: brd.uuid,
+      version: latestVersion.version,
+      action,
+      status: nextStatus,
+      review,
+    };
+  });
+}
+
 module.exports = {
   uploadBRD,
   getAllProjects,
   getBRDSummary,
   getBRDHistory,
+  getAdminBRDs,
+  getAdminBRDById,
+  decideBRD,
+  getClientBRDs,
+  getClientBRDById,
+  decideClientBRD,
 };
