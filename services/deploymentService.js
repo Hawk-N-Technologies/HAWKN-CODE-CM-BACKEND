@@ -1,6 +1,6 @@
 const sequelize = require("../config/db");
 const { Project, Client, User } = require("../models/associations");
-const ProjectDeployment = require("../models/projectDeployment");
+const ProjectDeployment = require("../models/ProjectDeployment");
 const logger = require("../utils/logger");
 
 /**
