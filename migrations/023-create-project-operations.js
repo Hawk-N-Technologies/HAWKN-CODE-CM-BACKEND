@@ -2,6 +2,13 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const exist = await queryInterface.tableExists("project_operations");
+
+    if (exist) {
+      console.log("project_operations table already exists");
+      return;
+    }
+
     await queryInterface.createTable("project_operations", {
       id: {
         type: Sequelize.INTEGER,
@@ -17,7 +24,6 @@ module.exports = {
         defaultValue: Sequelize.literal("gen_random_uuid()"),
       },
 
-      // One operations plan per project
       project_id: {
         type: Sequelize.INTEGER,
         allowNull: false,
@@ -122,61 +128,17 @@ module.exports = {
     });
 
     await queryInterface.sequelize.query(`
-      ALTER TABLE project_operations
-      ADD CONSTRAINT chk_project_operations_er_diagram_status
-      CHECK (er_diagram_status IN ('UPLOADED', 'NOT_UPLOADED'));
-
-      ALTER TABLE project_operations
-      ADD CONSTRAINT chk_project_operations_flowchart_status
-      CHECK (flowchart_status IN ('UPLOADED', 'NOT_UPLOADED'));
-
-      ALTER TABLE project_operations
-      ADD CONSTRAINT chk_project_operations_planning_status
-      CHECK (planning_status IN ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'));
+      ALTER TABLE "project_operations"
+        ADD CONSTRAINT "chk_project_operations_er_diagram_status"
+          CHECK ("er_diagram_status" IN ('UPLOADED', 'NOT_UPLOADED')),
+        ADD CONSTRAINT "chk_project_operations_flowchart_status"
+          CHECK ("flowchart_status" IN ('UPLOADED', 'NOT_UPLOADED')),
+        ADD CONSTRAINT "chk_project_operations_planning_status"
+          CHECK ("planning_status" IN ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'));
     `);
-
-    // Multiple developers can be assigned to one operations plan.
-    await queryInterface.createTable("project_operation_developers", {
-      project_operation_id: {
-        type: Sequelize.INTEGER,
-        primaryKey: true,
-        allowNull: false,
-        references: {
-          table: "project_operations",
-          field: "id",
-        },
-        onDelete: "CASCADE",
-        onUpdate: "CASCADE",
-      },
-
-      employee_id: {
-        type: Sequelize.INTEGER,
-        primaryKey: true,
-        allowNull: false,
-        references: {
-          table: "employees",
-          field: "id",
-        },
-        onDelete: "CASCADE",
-        onUpdate: "CASCADE",
-      },
-
-      created_at: {
-        type: Sequelize.DATE,
-        allowNull: false,
-        defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
-      },
-
-      updated_at: {
-        type: Sequelize.DATE,
-        allowNull: false,
-        defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
-      },
-    });
   },
 
   async down(queryInterface) {
-    await queryInterface.dropTable("project_operation_developers");
     await queryInterface.dropTable("project_operations");
   },
 };
