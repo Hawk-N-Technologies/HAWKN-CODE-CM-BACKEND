@@ -2,6 +2,7 @@ const authService = require("../services/authService");
 
 async function requireProjectLead(req, res, next) {
   try {
+    console.log(req.user);
     const allowed = await authService.checkProjectLeadAccess(
       req.user.userId,
       req.user.companyId,

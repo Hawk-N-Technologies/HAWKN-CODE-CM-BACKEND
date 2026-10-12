@@ -161,7 +161,7 @@ async function savePlanning(projectUuid, userId, companyId, payload, files) {
   let operation = await ProjectOperation.findOne({
     where: { projectId: project.id, companyId },
   });
-
+  console.log(operation);
   const updates = {
     technologyStack: technologyStack || null,
     planningStatus: "IN_PROGRESS",
@@ -197,6 +197,8 @@ async function savePlanning(projectUuid, userId, companyId, payload, files) {
   } else {
     await operation.update(updates);
   }
+  if (operation.erDiagramPath) updates.erDiagramStatus = "UPLOADED";
+  if (operation.flowchartPathPath) updates.flowchartStatus = "UPLOADED";
 
   await project.update({
     description: description || null,
@@ -205,6 +207,7 @@ async function savePlanning(projectUuid, userId, companyId, payload, files) {
 
   return serialize(project, operation);
 }
+
 async function getPlanningFile(projectUuid, kind) {
   const fileFieldMap = {
     erDiagram: "er_diagram_path",

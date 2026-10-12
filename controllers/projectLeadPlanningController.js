@@ -57,7 +57,6 @@ async function savePlanning(req, res, next) {
       req.body,
       req.files,
     );
-
     return res.json({
       success: true,
       message: "Project planning saved successfully.",

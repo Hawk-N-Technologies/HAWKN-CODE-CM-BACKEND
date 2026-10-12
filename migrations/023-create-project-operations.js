@@ -74,6 +74,16 @@ module.exports = {
         allowNull: true,
       },
 
+      er_diagram_path: {
+        type: Sequelize.STRING(500),
+        allowNull: true,
+      },
+
+      flowchart_path: {
+        type: Sequelize.STRING(500),
+        allowNull: true,
+      },
+
       er_diagram_status: {
         type: Sequelize.STRING(20),
         allowNull: false,
@@ -131,8 +141,10 @@ module.exports = {
       ALTER TABLE "project_operations"
         ADD CONSTRAINT "chk_project_operations_er_diagram_status"
           CHECK ("er_diagram_status" IN ('UPLOADED', 'NOT_UPLOADED')),
+
         ADD CONSTRAINT "chk_project_operations_flowchart_status"
           CHECK ("flowchart_status" IN ('UPLOADED', 'NOT_UPLOADED')),
+
         ADD CONSTRAINT "chk_project_operations_planning_status"
           CHECK ("planning_status" IN ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'));
     `);

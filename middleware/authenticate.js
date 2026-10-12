@@ -5,7 +5,6 @@ function authenticate(allowedRoles) {
   return function (req, res, next) {
     try {
       const token = req.cookies.access_token;
-
       if (!token) {
         return res.status(401).json({
           success: false,
@@ -46,7 +45,7 @@ function authenticate(allowedRoles) {
         companyId: decoded.companyId,
         role: decoded.role,
       });
-
+console.log(" iam lkjdflkj kd lgoint to tnext")
       next();
     } catch (error) {
       logger.error("Authentication middleware failed", {

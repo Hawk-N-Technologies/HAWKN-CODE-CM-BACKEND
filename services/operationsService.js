@@ -9,6 +9,7 @@ const Role = require("../models/Role");
 const Employee = require("../models/Employee");
 const ProjectOperation = require("../models/ProjectOperation");
 const ProjectOperationDeveloper = require("../models/ProjectOperationDeveloper");
+const ProjectOperationTester = require("../models/ProjectOperationTester");
 
 const DIAGRAM_STATUSES = ["UPLOADED", "NOT_UPLOADED"];
 const PLANNING_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"];
@@ -56,11 +57,13 @@ function employeeIncludes() {
       model: User,
       as: "user",
       required: true,
+      attributes: ["id", "firstName", "lastName", "email"],
       include: [
         {
           model: Role,
           as: "role",
           required: true,
+          attributes: ["id", "name"],
         },
       ],
     },
@@ -77,10 +80,6 @@ function employeeToOption(employee) {
   };
 }
 
-/**
- * Fetch projects whose BRDs have been approved by the client.
- * Existing operations assignments are included when present.
- */
 async function getApprovedProjects(companyId) {
   const projects = await Project.findAll({
     where: { companyId },
@@ -99,11 +98,13 @@ async function getApprovedProjects(companyId) {
         model: Client,
         as: "client",
         required: false,
+        attributes: ["id"],
         include: [
           {
             model: User,
             as: "user",
             required: false,
+            attributes: ["firstName", "lastName", "email"],
           },
         ],
       },
@@ -111,23 +112,45 @@ async function getApprovedProjects(companyId) {
         model: ProjectOperation,
         as: "operationsPlan",
         required: false,
+        attributes: [
+          "id",
+          "projectId",
+          "projectLeadId",
+          "technologyStack",
+          "planningStatus",
+          "er_diagram_status",
+          "flowchart_status",
+          "er_diagram_path",
+          "flowchart_path",
+        ],
         include: [
           {
             model: Employee,
             as: "projectLead",
             required: false,
+            attributes: ["id", "userId", "companyEmail"],
             include: employeeIncludes(),
           },
           {
             model: Employee,
             as: "tester",
             required: false,
+            attributes: ["id", "userId", "companyEmail"],
             include: employeeIncludes(),
           },
           {
             model: Employee,
             as: "developers",
             required: false,
+            attributes: ["id", "userId", "companyEmail"],
+            through: { attributes: [] },
+            include: employeeIncludes(),
+          },
+          {
+            model: Employee,
+            as: "testers",
+            required: false,
+            attributes: ["id", "userId", "companyEmail"],
             through: { attributes: [] },
             include: employeeIncludes(),
           },
@@ -183,7 +206,7 @@ async function saveOperationsPlan({
   companyId,
   userId,
   leadId,
-  testerId,
+  testerIds = [],
   developerIds = [],
   technologyStack,
   erDiagramStatus = "NOT_UPLOADED",
@@ -196,6 +219,9 @@ async function saveOperationsPlan({
   if (!Array.isArray(developerIds)) {
     throw createError("developerIds must be an array.");
   }
+  if (!Array.isArray(testerIds)) {
+    throw createError("testerId must be an array.");
+  }
 
   if (!DIAGRAM_STATUSES.includes(erDiagramStatus)) {
     throw createError("Invalid ER diagram status.");
@@ -206,7 +232,6 @@ async function saveOperationsPlan({
   }
 
   const normalizedLeadId = leadId ? Number(leadId) : null;
-  const normalizedTesterId = testerId ? Number(testerId) : null;
 
   const normalizedDeveloperIds = [
     ...new Set(
@@ -215,12 +240,19 @@ async function saveOperationsPlan({
         .map(Number),
     ),
   ];
+  const normalizedTesterIds = [
+    ...new Set(
+      testerIds
+        .filter((id) => id !== null && id !== undefined && id !== "")
+        .map(Number),
+    ),
+  ];
 
   const allIds = [
     ...new Set([
       ...(normalizedLeadId ? [normalizedLeadId] : []),
-      ...(normalizedTesterId ? [normalizedTesterId] : []),
       ...normalizedDeveloperIds,
+      ...normalizedTesterIds,
     ]),
   ];
 
@@ -294,15 +326,6 @@ async function saveOperationsPlan({
       }
     }
 
-    if (normalizedTesterId) {
-      const tester = employeeById.get(normalizedTesterId);
-      const role = normalizeRole(getRoleName(tester));
-
-      if (!TESTER_ROLES.includes(role)) {
-        throw createError("The assigned tester must have a tester/QA role.");
-      }
-    }
-
     for (const id of normalizedDeveloperIds) {
       const employee = employeeById.get(id);
       const role = normalizeRole(getRoleName(employee));
@@ -313,11 +336,21 @@ async function saveOperationsPlan({
         );
       }
     }
+    for (const id of normalizedTesterIds) {
+      const employee = employeeById.get(id);
+      const role = normalizeRole(getRoleName(employee));
+
+      if (!TESTER_ROLES.includes(role)) {
+        throw createError(
+          "Every assigned developer must have the developer role.",
+        );
+      }
+    }
 
     const hasPlanningDetails = Boolean(
       normalizedLeadId &&
-      normalizedTesterId &&
       normalizedDeveloperIds.length > 0 &&
+      normalizedTesterIds.length > 0 &&
       String(technologyStack || "").trim(),
     );
 
@@ -336,7 +369,6 @@ async function saveOperationsPlan({
     const planValues = {
       companyId,
       projectLeadId: normalizedLeadId,
-      testerId: normalizedTesterId,
       technologyStack: technologyStack ? String(technologyStack).trim() : null,
       erDiagramStatus,
       flowchartStatus,
@@ -368,10 +400,23 @@ async function saveOperationsPlan({
       where: { projectOperationId: plan.id },
       transaction,
     });
+    await ProjectOperationTester.destroy({
+      where: { projectOperationId: plan.id },
+      transaction,
+    });
 
     if (normalizedDeveloperIds.length > 0) {
       await ProjectOperationDeveloper.bulkCreate(
         normalizedDeveloperIds.map((employeeId) => ({
+          projectOperationId: plan.id,
+          employeeId,
+        })),
+        { transaction },
+      );
+    }
+    if (normalizedTesterIds.length > 0) {
+      await ProjectOperationTester.bulkCreate(
+        normalizedTesterIds.map((employeeId) => ({
           projectOperationId: plan.id,
           employeeId,
         })),

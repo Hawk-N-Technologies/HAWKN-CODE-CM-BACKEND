@@ -22,6 +22,7 @@ const BRDVersion = require("./BRDVersion");
 const BRDReview = require("./BRDReview");
 const ProjectOperation = require("./ProjectOperation");
 const ProjectOperationDeveloper = require("./ProjectOperationDeveloper");
+const ProjectOperationTester = require("./ProjectOperationTester");
 
 /*
 |--------------------------------------------------------------------------
@@ -518,20 +519,30 @@ ProjectOperation.belongsTo(Employee, {
 |--------------------------------------------------------------------------
 */
 
-ProjectOperation.belongsToMany(Employee, {
-  through: ProjectOperationDeveloper,
-  foreignKey: "projectOperationId",
-  otherKey: "employeeId",
-  as: "developers",
-});
-
 Employee.belongsToMany(ProjectOperation, {
   through: ProjectOperationDeveloper,
   foreignKey: "employeeId",
   otherKey: "projectOperationId",
   as: "operationPlans",
 });
-
+ProjectOperation.belongsToMany(Employee, {
+  through: ProjectOperationDeveloper,
+  foreignKey: "projectOperationId",
+  otherKey: "employeeId",
+  as: "developers",
+  inverse: {
+    as: "operationPlans",
+  },
+}); // Tester associations
+ProjectOperation.belongsToMany(Employee, {
+  through: ProjectOperationTester,
+  foreignKey: "projectOperationId",
+  otherKey: "employeeId",
+  as: "testers",
+  inverse: {
+    as: "testingOperationPlans",
+  },
+});
 module.exports = {
   Company,
   CompanyProfile,
@@ -558,4 +569,5 @@ module.exports = {
 
   ProjectOperation,
   ProjectOperationDeveloper,
+  ProjectOperationTester,
 };
