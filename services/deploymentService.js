@@ -1,6 +1,6 @@
 const sequelize = require("../config/db");
 const { Project, Client, User } = require("../models/associations");
-const ProjectDeployment = require("../models/projectDeployment");
+const ProjectDeployment = require("../models/ProjectDeployment");
 const logger = require("../utils/logger");
 
 /**
@@ -17,8 +17,10 @@ function httpError(statusCode, message) {
   return error;
 }
 
-const fullName = (user) => [user?.firstName, user?.lastName].filter(Boolean).join(" ");
-const emptyToNull = (value) => (value === undefined || value === null || value === "" ? null : value);
+const fullName = (user) =>
+  [user?.firstName, user?.lastName].filter(Boolean).join(" ");
+const emptyToNull = (value) =>
+  value === undefined || value === null || value === "" ? null : value;
 
 // What a plan looks like before anything is saved
 const DEFAULT_PLAN = {
@@ -60,7 +62,12 @@ function readiness(plan) {
     liveDomain: Boolean(plan.liveDomain),
   };
   const done = Object.values(checks).filter(Boolean).length;
-  return { checks, done, total: Object.keys(checks).length, isReady: done === Object.keys(checks).length };
+  return {
+    checks,
+    done,
+    total: Object.keys(checks).length,
+    isReady: done === Object.keys(checks).length,
+  };
 }
 
 function projectToResponse(project) {
@@ -82,7 +89,9 @@ async function findProject(projectUuid, companyId, transaction) {
         model: Client,
         as: "client",
         attributes: ["id"],
-        include: [{ model: User, as: "user", attributes: ["firstName", "lastName"] }],
+        include: [
+          { model: User, as: "user", attributes: ["firstName", "lastName"] },
+        ],
       },
     ],
     transaction,
@@ -106,7 +115,9 @@ async function listProjects(companyId) {
           model: Client,
           as: "client",
           attributes: ["id"],
-          include: [{ model: User, as: "user", attributes: ["firstName", "lastName"] }],
+          include: [
+            { model: User, as: "user", attributes: ["firstName", "lastName"] },
+          ],
         },
       ],
       order: [["name", "ASC"]],
@@ -118,7 +129,9 @@ async function listProjects(companyId) {
           where: { companyId, projectId: projects.map((p) => p.id) },
         })
       : [];
-    const planByProjectId = new Map(plans.map((plan) => [plan.projectId, plan]));
+    const planByProjectId = new Map(
+      plans.map((plan) => [plan.projectId, plan]),
+    );
 
     const rows = projects.map((project) => {
       const plan = planToResponse(planByProjectId.get(project.id));
@@ -133,7 +146,11 @@ async function listProjects(companyId) {
     logger.info("Deployment plans fetched", { companyId, count: rows.length });
     return rows;
   } catch (error) {
-    logger.error("Failed to fetch deployment plans", { companyId, error: error.message, stack: error.stack });
+    logger.error("Failed to fetch deployment plans", {
+      companyId,
+      error: error.message,
+      stack: error.stack,
+    });
     throw error;
   }
 }
@@ -141,9 +158,16 @@ async function listProjects(companyId) {
 async function getPlan(projectUuid, companyId) {
   const project = await findProject(projectUuid, companyId);
   const plan = planToResponse(
-    await ProjectDeployment.findOne({ where: { projectId: project.id, companyId } }),
+    await ProjectDeployment.findOne({
+      where: { projectId: project.id, companyId },
+    }),
   );
-  return { project: projectToResponse(project), hasPlan: Boolean(plan.uuid), plan, readiness: readiness(plan) };
+  return {
+    project: projectToResponse(project),
+    hasPlan: Boolean(plan.uuid),
+    plan,
+    readiness: readiness(plan),
+  };
 }
 
 /**
@@ -178,14 +202,24 @@ async function savePlan(projectUuid, companyId, userId, data) {
         return false;
       }
 
-      await ProjectDeployment.create({ companyId, projectId: project.id, ...values }, { transaction });
+      await ProjectDeployment.create(
+        { companyId, projectId: project.id, ...values },
+        { transaction },
+      );
       return true;
     });
 
-    logger.info(created ? "Deployment plan created" : "Deployment plan updated", { companyId, projectUuid, userId });
+    logger.info(
+      created ? "Deployment plan created" : "Deployment plan updated",
+      { companyId, projectUuid, userId },
+    );
     return { created, ...(await getPlan(projectUuid, companyId)) };
   } catch (error) {
-    logger.error("Failed to save deployment plan", { companyId, projectUuid, error: error.message });
+    logger.error("Failed to save deployment plan", {
+      companyId,
+      projectUuid,
+      error: error.message,
+    });
     throw error;
   }
 }
