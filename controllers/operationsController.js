@@ -78,20 +78,22 @@ async function saveOperationsPlan(req, res, next) {
       });
     }
     const {
-      leadId,
-      testerId,
+      projectLeadId,
       developerIds,
+      testerIds,
       technologyStack,
       erDiagramStatus,
       flowchartStatus,
     } = req.body;
 
+    console.log(req.body);
+
     const plan = await operationsService.saveOperationsPlan({
       brdUuid,
       companyId,
       userId,
-      leadId,
-      testerId,
+      leadId: projectLeadId,
+      testerIds,
       developerIds,
       technologyStack,
       erDiagramStatus,

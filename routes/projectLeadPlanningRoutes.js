@@ -8,18 +8,28 @@ const controller = require("../controllers/projectLeadPlanningController");
 
 const router = express.Router();
 
-router.use(authenticate(["developer"]));
-router.use(requireProjectLead);
-
-router.get("/projects", controller.listProjects);
-router.get("/projects/:projectUuid", controller.getPlanning);
+router.get(
+  "/projects",
+  authenticate(["developer", "admin"]),
+  requireProjectLead,
+  controller.listProjects,
+);
+router.get(
+  "/projects/:projectUuid",
+  authenticate(["developer"]),
+  requireProjectLead,
+  controller.getPlanning,
+);
 router.put(
   "/projects/:projectUuid",
+  authenticate(["developer"]),
   uploadPlanningDocuments,
+  requireProjectLead,
   controller.savePlanning,
 );
 router.get(
   "/projects/:projectUuid/files/:kind",
+  authenticate(["developer", "admin"]),
   controller.getPlanningFileController,
 );
 
