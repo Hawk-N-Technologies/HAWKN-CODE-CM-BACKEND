@@ -68,6 +68,18 @@ const ProjectOperation = sequelize.define(
       },
     },
 
+    erDiagramPath: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      field: "er_diagram_path",
+    },
+
+    flowchartPath: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      field: "flowchart_path",
+    },
+
     planningStatus: {
       type: DataTypes.STRING(20),
       allowNull: false,
