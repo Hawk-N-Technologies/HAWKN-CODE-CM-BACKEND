@@ -1,7 +1,7 @@
 "use strict";
 
 const planningService = require("../services/projectLeadPlanningService");
-
+const logger = require("../utils/logger");
 function sendError(error, res, next) {
   if (error.statusCode) {
     return res.status(error.statusCode).json({
@@ -37,7 +37,7 @@ async function getPlanning(req, res, next) {
       req.user.userId,
       req.user.companyId,
     );
-
+    console.log(data);
     return res.json({
       success: true,
       message: "Project planning fetched successfully.",
@@ -68,20 +68,40 @@ async function savePlanning(req, res, next) {
   }
 }
 
-async function downloadFile(req, res, next) {
+async function getPlanningFileController(req, res) {
   try {
-    const filePath = await planningService.getPlanningFile(
-      req.params.projectUuid,
-      req.params.kind,
-      req.user.userId,
-      req.user.companyId,
+    const { projectUuid, kind } = req.params;
+
+    const { filePath, fileName } = await planningService.getPlanningFile(
+      projectUuid,
+      kind,
     );
 
-    return res.download(filePath, (error) => {
-      if (error && !res.headersSent) next(error);
+    return res.sendFile(filePath, (error) => {
+      if (error && !res.headersSent) {
+        logger.error("Failed to send project planning file", {
+          projectUuid,
+          kind,
+          error: error.message,
+        });
+
+        return res.status(error.statusCode || 500).json({
+          success: false,
+          message: "Failed to open planning document.",
+        });
+      }
     });
   } catch (error) {
-    return sendError(error, res, next);
+    logger.error("Get project planning file failed", {
+      projectUuid: req.params.projectUuid,
+      kind: req.params.kind,
+      error: error.message,
+    });
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to open planning document.",
+    });
   }
 }
 
@@ -89,5 +109,5 @@ module.exports = {
   listProjects,
   getPlanning,
   savePlanning,
-  downloadFile,
+  getPlanningFileController,
 };

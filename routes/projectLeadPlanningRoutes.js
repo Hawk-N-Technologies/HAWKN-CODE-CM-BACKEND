@@ -3,9 +3,7 @@
 const express = require("express");
 const authenticate = require("../middleware/authenticate");
 const requireProjectLead = require("../middleware/requireProjectLead");
-const {
-  uploadPlanningDocuments,
-} = require("../middleware/planningUpload");
+const { uploadPlanningDocuments } = require("../middleware/planningUpload");
 const controller = require("../controllers/projectLeadPlanningController");
 
 const router = express.Router();
@@ -22,7 +20,7 @@ router.put(
 );
 router.get(
   "/projects/:projectUuid/files/:kind",
-  controller.downloadFile,
+  controller.getPlanningFileController,
 );
 
 module.exports = router;

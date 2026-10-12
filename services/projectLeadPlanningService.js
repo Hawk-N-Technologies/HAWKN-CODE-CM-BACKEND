@@ -8,9 +8,9 @@ const {
   ProjectOperation,
 } = require("../models/associations");
 
-const { uploadDirectory } = require("../middleware/planningUpload");
 const path = require("path");
-const fs = require("fs/promises");
+const fs = require("fs");
+const UPLOAD_DIR = path.resolve(__dirname, "../uploads/project-planning");
 
 function httpError(statusCode, message) {
   const error = new Error(message);
@@ -39,14 +39,7 @@ async function getAssignedProject(projectUuid, userId, companyId) {
       companyId,
       projectLeadId: employee.id,
     },
-    attributes: [
-      "id",
-      "uuid",
-      "name",
-      "description",
-      "deadline",
-      "status",
-    ],
+    attributes: ["id", "uuid", "name", "description", "deadline", "status"],
     include: [
       {
         model: Client,
@@ -78,8 +71,8 @@ function serialize(project, operation) {
     deadline: dateOnly(project.deadline),
     clientName: fullName(project.client?.user) || "—",
     technologyStack: operation?.technologyStack || "",
-    erDiagramUploaded: Boolean(operation?.erDiagramPath),
-    flowchartUploaded: Boolean(operation?.flowchartPath),
+    erDiagramUploaded: operation?.erDiagramPath,
+    flowchartUploaded: operation?.flowchartPath,
     planningStatus: operation?.planningStatus || "NOT_STARTED",
   };
 }
@@ -138,16 +131,12 @@ async function getPlanning(projectUuid, userId, companyId) {
     where: { projectId: project.id, companyId },
   });
 
+  console.log(operation);
+
   return serialize(project, operation);
 }
 
-async function savePlanning(
-  projectUuid,
-  userId,
-  companyId,
-  payload,
-  files,
-) {
+async function savePlanning(projectUuid, userId, companyId, payload, files) {
   const project = await getAssignedProject(projectUuid, userId, companyId);
 
   const technologyStack = String(payload.technologyStack || "").trim();
@@ -159,7 +148,10 @@ async function savePlanning(
   }
 
   if (description.length > 10000) {
-    throw httpError(400, "Project information must be 10,000 characters or fewer.");
+    throw httpError(
+      400,
+      "Project information must be 10,000 characters or fewer.",
+    );
   }
 
   if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) {
@@ -213,38 +205,76 @@ async function savePlanning(
 
   return serialize(project, operation);
 }
+async function getPlanningFile(projectUuid, kind) {
+  const fileFieldMap = {
+    erDiagram: "er_diagram_path",
+    flowchart: "flowchart_path",
+  };
 
-async function getPlanningFile(projectUuid, kind, userId, companyId) {
-  if (!["erDiagram", "flowchart"].includes(kind)) {
-    throw httpError(400, "Invalid planning document type.");
+  const field = fileFieldMap[kind];
+
+  if (!field) {
+    const error = new Error("Invalid planning document type.");
+    error.statusCode = 400;
+    throw error;
   }
 
-  const project = await getAssignedProject(projectUuid, userId, companyId);
-  const operation = await ProjectOperation.findOne({
-    where: { projectId: project.id, companyId },
+  // Find project by UUID
+  const project = await Project.findOne({
+    where: { uuid: projectUuid },
+    attributes: ["id", "uuid", "name"],
   });
 
-  const filename =
-    kind === "erDiagram"
-      ? operation?.erDiagramPath
-      : operation?.flowchartPath;
-
-  if (!filename) {
-    throw httpError(404, "No document has been uploaded for this field.");
+  if (!project) {
+    const error = new Error("Project not found.");
+    error.statusCode = 404;
+    throw error;
   }
 
-  const safeFilename = path.basename(filename);
-  const absolutePath = path.join(uploadDirectory, safeFilename);
+  // Find operations record and the requested file path
+  const projectOperation = await ProjectOperation.findOne({
+    where: {
+      project_id: project.id,
+    },
+    attributes: ["id", field],
+  });
 
-  try {
-    await fs.access(absolutePath);
-  } catch {
-    throw httpError(404, "The stored planning document is missing.");
+  if (!projectOperation) {
+    const error = new Error("Project operations record not found.");
+    error.statusCode = 404;
+    throw error;
   }
 
-  return absolutePath;
+  const storedFile = projectOperation.get(field);
+
+  if (!storedFile) {
+    const error = new Error("Planning document has not been uploaded.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Resolve the file path safely
+  const fileName = path.basename(storedFile);
+  const uploadDir = path.resolve(UPLOAD_DIR);
+  const filePath = path.resolve(uploadDir, fileName);
+
+  if (path.dirname(filePath) !== uploadDir) {
+    const error = new Error("Invalid file path.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!fs.existsSync(filePath)) {
+    const error = new Error("Planning document was not found on disk.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return {
+    filePath,
+    fileName,
+  };
 }
-
 module.exports = {
   listMyProjects,
   getPlanning,
