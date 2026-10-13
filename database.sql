@@ -831,13 +831,6 @@ CREATE TABLE project_tasks (
 );
 
 
-
-
-
-
-
-
-
 CREATE INDEX idx_tasks_project_status
 ON project_tasks(project_id, status);
 CREATE INDEX idx_tasks_assignee_status
@@ -853,3 +846,33 @@ ON project_tasks(project_id, due_date);
 
 
 
+
+
+
+
+
+
+
+CREATE TABLE task_testing (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+    task_id INTEGER NOT NULL
+        REFERENCES project_tasks(id) ON DELETE CASCADE,
+    tester_id INTEGER NOT NULL
+        REFERENCES employees(id) ON DELETE RESTRICT,
+    status VARCHAR(20) NOT NULL DEFAULT 'Pending'
+        CHECK (status IN (
+            'Pending', 'In Progress', 'Passed', 'Failed'
+        )),
+    test_notes TEXT,
+    tested_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_task_testing_task
+    ON task_testing(task_id);
+CREATE INDEX idx_task_testing_tester_status
+    ON task_testing(tester_id, status);

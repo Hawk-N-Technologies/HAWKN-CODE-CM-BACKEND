@@ -2,7 +2,7 @@ const projectModuleController = require("../controllers/projectModuleController"
 const authenticate = require("../middleware/authenticate");
 const express = require("express");
 const router = express.Router();
-const requireProjectLead = require("../middleware/requireProjectLead");
+const { requireProjectLead } = require("../middleware/requireProjectLead");
 
 // Get all modules for a project
 router.get(

@@ -6,6 +6,8 @@ const Employee = require("../models/Employee");
 const User = require("../models/User");
 const Role = require("../models/Role");
 const { Op } = require("@sequelize/core");
+const middleware = require("../middleware/requireProjectLead");
+const sequelize = require("../config/db");
 const VALID_PRIORITIES = ["Low", "Medium", "High", "Critical"];
 const VALID_STATUSES = [
   "Backlog",
@@ -15,7 +17,10 @@ const VALID_STATUSES = [
   "Testing",
   "Done",
 ];
-
+const employeeService = require("../services/employeeService");
+const ProjectOperation = require("../models/ProjectOperation");
+const ProjectOperationTester = require("../models/ProjectOperationTester");
+const TaskTesting = require("../models/TaskTesting");
 const TASK_FIELDS = [
   "title",
   "description",
@@ -467,6 +472,149 @@ const getDevelopersAndTesters = async (companyId) => {
   });
 };
 
+const STATUSES = [
+  "Backlog",
+  "To Do",
+  "In Progress",
+  "Code Review",
+  "Testing",
+  "Done",
+];
+
+async function getMyTasks(userId, companyId) {
+  const employeeId = await employeeService.getEmployeeIdByUserId(userId);
+
+  const tasks = await ProjectTask.findAll({
+    where: {
+      assignedTo: employeeId,
+    },
+    include: [
+      {
+        model: Project,
+        as: "project",
+        where: { companyId },
+        attributes: ["id", "uuid", "name"],
+        required: true,
+      },
+      {
+        model: ProjectModule,
+        as: "module",
+        attributes: ["id", "uuid", "name"],
+        required: false,
+      },
+      {
+        model: ProjectPhase,
+        as: "phase",
+        attributes: ["id", "uuid", "name"],
+        required: false,
+      },
+    ],
+    order: [
+      ["sortOrder", "ASC"],
+      ["createdAt", "DESC"],
+    ],
+  });
+
+  return tasks;
+}
+
+async function updateMyTaskStatus(taskUuid, userId, companyId, status) {
+  if (!STATUSES.includes(status)) {
+    throw new Error("Invalid task status.");
+  }
+
+  const employeeId = await employeeService.getEmployeeIdByUserId(userId);
+
+  const transaction = await sequelize.startUnmanagedTransaction();
+
+  try {
+    // 1. Find the task
+    const task = await ProjectTask.findOne({
+      where: {
+        uuid: taskUuid,
+        assignedTo: employeeId,
+      },
+      include: [
+        {
+          model: Project,
+          as: "project",
+          where: { companyId },
+          attributes: ["id"],
+          required: true,
+        },
+      ],
+      transaction,
+    });
+    if (!task) {
+      await transaction.rollback();
+      return null;
+    }
+
+    // 2. Update task status
+    task.status = status;
+    task.completedAt = status === "Done" ? new Date() : null;
+
+    await task.save({ transaction });
+    const isLead = await middleware.checkProjectLead(
+      userId,
+      companyId,
+      task.project.id,
+    );
+
+    if ((status === "Testing" || status === "Done") && !isLead) {
+      return null;
+    }
+    // 3. Create testing records when status is Testing
+    if (status === "Testing") {
+      const projectOperation = await ProjectOperation.findOne({
+        where: {
+          projectId: task.project.id,
+        },
+        transaction,
+      });
+
+      if (projectOperation) {
+        const testers = await ProjectOperationTester.findAll({
+          where: {
+            projectOperationId: projectOperation.id,
+          },
+          transaction,
+        });
+
+        for (const tester of testers) {
+          // Avoid duplicate records for the same task and tester
+          const existingTesting = await TaskTesting.findOne({
+            where: {
+              projectId: task.project.id,
+              taskId: task.id,
+              testerId: tester.employeeId,
+            },
+            transaction,
+          });
+
+          if (!existingTesting) {
+            await TaskTesting.create(
+              {
+                projectId: task.project.id,
+                taskId: task.id,
+                testerId: tester.employeeId,
+              },
+              { transaction },
+            );
+          }
+        }
+      }
+    }
+
+    // 4. Commit after all database operations finish
+    await transaction.commit();
+
+    return task;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
 module.exports = {
   createTask,
   listProjectTasks,
@@ -476,4 +624,6 @@ module.exports = {
   updateTask,
   deleteTask,
   getDevelopersAndTesters,
+  getMyTasks,
+  updateMyTaskStatus,
 };

@@ -2,7 +2,7 @@ const projectPhaseController = require("../controllers/projectPhaseController");
 const authenticate = require("../middleware/authenticate");
 const express = require("express");
 const router = express.Router();
-const requireProjectLead = require("../middleware/requireProjectLead");
+const { requireProjectLead } = require("../middleware/requireProjectLead");
 router.get(
   "/projects/:projectUuid/modules/:moduleUuid/phases",
   authenticate(["hr", "developer", "tester", "bde"]),

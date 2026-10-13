@@ -234,9 +234,44 @@ async function checkProjectLeadAccess(userId, companyId) {
 
   return Boolean(project || operation);
 }
+
+async function checkProjectLeadAccess2(userId, companyId, projectId) {
+  const employee = await Employee.findOne({
+    where: {
+      userId,
+      companyId,
+      employmentStatus: "Active",
+    },
+    attributes: ["id", "uuid"],
+  });
+
+  if (!employee) return false;
+
+  const [project, operation] = await Promise.all([
+    Project.findOne({
+      where: {
+        companyId,
+        projectLeadId: employee.id,
+      },
+      attributes: ["id"],
+    }),
+
+    ProjectOperation.findOne({
+      where: {
+        companyId,
+        projectLeadId: employee.id,
+        projectId,
+      },
+      attributes: ["id"],
+    }),
+  ]);
+
+  return Boolean(project || operation);
+}
 module.exports = {
   login,
   getMe,
   getAvailableModes,
   checkProjectLeadAccess,
+  checkProjectLeadAccess2,
 };

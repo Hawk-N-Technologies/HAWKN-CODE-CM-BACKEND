@@ -35,6 +35,7 @@ const projectPhaseRoutes = require("./routes/projectPhaseRoutes");
 const projectTaskRoutes = require("./routes/projectTaskRoutes");
 const projectLeadTechStackRoutes = require("./routes/projectLeadTechStackRoutes");
 const projectLeadTeamRoutes = require("./routes/projectLeadTeamRoutes");
+const kanbanRoutes = require("./routes/kanbanRoutes");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -88,13 +89,8 @@ app.use("/api/project-lead/tech-stack", projectLeadTechStackRoutes);
 app.use("/api/project-lead/team", projectLeadTeamRoutes);
 app.use("/api", projectModuleRoutes);
 app.use("/api", projectPhaseRoutes);
-app.get("/api/debug-test", (req, res) => {
-  console.log("DEBUG ROUTE HIT");
-  return res.status(200).json({ success: true });
-});
-
 app.use("/api", projectTaskRoutes);
-
+app.use("/api/kanban", kanbanRoutes);
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 

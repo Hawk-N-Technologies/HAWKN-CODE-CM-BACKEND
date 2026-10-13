@@ -2,7 +2,7 @@
 
 const express = require("express");
 const authenticate = require("../middleware/authenticate");
-const requireProjectLead = require("../middleware/requireProjectLead");
+const { requireProjectLead } = require("../middleware/requireProjectLead");
 const controller = require("../controllers/projectLeadTeamController");
 
 const router = express.Router();

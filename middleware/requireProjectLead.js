@@ -21,4 +21,23 @@ async function requireProjectLead(req, res, next) {
   }
 }
 
-module.exports = requireProjectLead;
+async function checkProjectLead(userId, companyId, projectId) {
+  try {
+    const allowed = await authService.checkProjectLeadAccess2(
+      userId,
+      companyId,
+      projectId,
+    );
+
+    if (!allowed) {
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.log(error);
+    return false;
+  }
+}
+
+module.exports = { requireProjectLead, checkProjectLead };

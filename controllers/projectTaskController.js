@@ -166,6 +166,75 @@ const getDevelopersAndTesters = async (req, res) => {
   }
 };
 
+const getMyTasks = async (req, res) => {
+  try {
+    const tasks = await projectTaskService.getMyTasks(
+      req.user.userId,
+      req.user.companyId,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: tasks,
+    });
+  } catch (error) {
+    console.error("Get developer tasks error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch developer tasks.",
+    });
+  }
+};
+
+const updateMyTaskStatus = async (req, res) => {
+  try {
+    const { taskUuid } = req.params;
+    const { status } = req.body;
+
+    const task = await projectTaskService.updateMyTaskStatus(
+      taskUuid,
+      req.user.userId,
+      req.user.companyId,
+      status,
+    );
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: "Task not found or not assigned to you.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Task status updated successfully.",
+      data: task,
+    });
+  } catch (error) {
+    console.error("Update developer task status error:", error);
+
+    if (error.message === "Invalid task status.") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (error.message === "Employee record not found for this user.") {
+      return res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update task status.",
+    });
+  }
+};
+
 module.exports = {
   createTask,
   listProjectTasks,
@@ -175,4 +244,6 @@ module.exports = {
   updateTask,
   deleteTask,
   getDevelopersAndTesters,
+  getMyTasks,
+  updateMyTaskStatus,
 };

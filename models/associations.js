@@ -27,6 +27,7 @@ const ProjectTask = require("./ProjectTask");
 const ProjectTaskDeveloper = require("./ProjectTaskDeveloper");
 const ProjectPhase = require("./ProjectPhase");
 const ProjectModule = require("./ProjectModule");
+const TaskTesting = require("./TaskTesting");
 
 /*
 |--------------------------------------------------------------------------
@@ -547,7 +548,15 @@ ProjectOperation.belongsToMany(Employee, {
     as: "testingOperationPlans",
   },
 });
+Project.hasMany(ProjectTask, {
+  foreignKey: "projectId",
+  as: "tasks",
+});
 
+ProjectTask.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
 // Project → Modules
 Project.hasMany(ProjectModule, {
   foreignKey: "projectId",
@@ -625,6 +634,54 @@ ProjectTaskDeveloper.belongsTo(Employee, {
   as: "employee",
 });
 
+/*
+|--------------------------------------------------------------------------
+| Project - Task Testing
+|--------------------------------------------------------------------------
+*/
+
+ProjectTask.hasMany(TaskTesting, {
+  foreignKey: "taskId",
+  as: "testingRecords",
+});
+
+TaskTesting.belongsTo(ProjectTask, {
+  foreignKey: "taskId",
+  as: "task",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Project - Task Testing
+|--------------------------------------------------------------------------
+*/
+
+Project.hasMany(TaskTesting, {
+  foreignKey: "projectId",
+  as: "taskTestingRecords",
+});
+
+TaskTesting.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Employee - Task Testing
+|--------------------------------------------------------------------------
+*/
+
+Employee.hasMany(TaskTesting, {
+  foreignKey: "testerId",
+  as: "taskTestingAssignments",
+});
+
+TaskTesting.belongsTo(Employee, {
+  foreignKey: "testerId",
+  as: "tester",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -657,4 +714,6 @@ module.exports = {
   ProjectPhase,
   ProjectTask,
   ProjectTaskDeveloper,
+
+  TaskTesting,
 };

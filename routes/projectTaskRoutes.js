@@ -1,7 +1,7 @@
 const express = require("express");
 const authenticate = require("../middleware/authenticate");
 const projectTaskController = require("../controllers/projectTaskController");
-const requireProjectLead = require("../middleware/requireProjectLead");
+const { requireProjectLead } = require("../middleware/requireProjectLead");
 const router = express.Router();
 
 router.post(
@@ -53,6 +53,18 @@ router.get(
   "/developers-testers",
   authenticate(["developer"]),
   projectTaskController.getDevelopersAndTesters,
+);
+
+router.get(
+  "/my-tasks",
+  authenticate(["developer"]),
+  projectTaskController.getMyTasks,
+);
+
+router.patch(
+  "/my-tasks/:taskUuid/status",
+  authenticate(["developer"]),
+  projectTaskController.updateMyTaskStatus,
 );
 
 module.exports = router;
