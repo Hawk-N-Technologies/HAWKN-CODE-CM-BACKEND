@@ -89,39 +89,15 @@ async function listMyProjects(userId, companyId) {
 
   const projects = await Project.findAll({
     where: { companyId, projectLeadId: employee.id },
-    attributes: ["id", "uuid", "name", "description", "deadline", "status"],
-    include: [
-      {
-        model: Client,
-        as: "client",
-        attributes: ["id"],
-        include: [
-          {
-            model: User,
-            as: "user",
-            attributes: ["firstName", "lastName"],
-          },
-        ],
-      },
-    ],
+    attributes: ["uuid", "name"],
     order: [["createdAt", "DESC"]],
     limit: 500,
   });
 
-  const operations = await ProjectOperation.findAll({
-    where: {
-      companyId,
-      projectId: projects.map((project) => project.id),
-    },
-  });
-
-  const operationByProjectId = new Map(
-    operations.map((operation) => [operation.projectId, operation]),
-  );
-
-  return projects.map((project) =>
-    serialize(project, operationByProjectId.get(project.id)),
-  );
+  return projects.map((project) => ({
+    uuid: project.uuid,
+    name: project.name,
+  }));
 }
 
 async function getPlanning(projectUuid, userId, companyId) {
