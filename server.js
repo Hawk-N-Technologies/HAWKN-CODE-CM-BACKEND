@@ -30,6 +30,7 @@ const deploymentRoutes = require("./routes/deploymentRoutes");
 const clientProjectRoutes = require("./routes/clientProjectRoutes");
 const projectLeadPlanningRoutes = require("./routes/projectLeadPlanningRoutes");
 const hrDashboardRoutes = require("./routes/hrDashboardRoutes");
+const projectLeadTechStackRoutes = require("./routes/projectLeadTechStackRoutes");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -78,6 +79,7 @@ app.use("/api/admin/deployments", deploymentRoutes);
 app.use("/api/client/projects", clientProjectRoutes);
 app.use("/api/project-lead/planning", projectLeadPlanningRoutes);
 app.use("/api/hr/dashboard", hrDashboardRoutes);
+app.use("/api/project-lead/tech-stack", projectLeadTechStackRoutes);
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
