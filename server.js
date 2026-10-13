@@ -84,6 +84,11 @@ app.use("/api/client/projects", clientProjectRoutes);
 app.use("/api/project-lead/planning", projectLeadPlanningRoutes);
 app.use("/api", projectModuleRoutes);
 app.use("/api", projectPhaseRoutes);
+app.get("/api/debug-test", (req, res) => {
+  console.log("DEBUG ROUTE HIT");
+  return res.status(200).json({ success: true });
+});
+
 app.use("/api", projectTaskRoutes);
 app.use("/api/hr/dashboard", hrDashboardRoutes);
 app.use("/api/project-lead/team", projectLeadTeamRoutes);

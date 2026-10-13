@@ -49,4 +49,10 @@ router.delete(
   projectTaskController.deleteTask,
 );
 
+router.get(
+  "/developers-testers",
+  authenticate(["developer"]),
+  projectTaskController.getDevelopersAndTesters,
+);
+
 module.exports = router;

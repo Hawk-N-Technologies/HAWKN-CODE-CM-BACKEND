@@ -36,7 +36,6 @@ const createTask = async (req, res) => {
 
 const listProjectTasks = async (req, res) => {
   try {
-    console.log("i am hiiteed");
     const data = await projectTaskService.listProjectTasks(
       req.params.projectUuid,
       req.query,
@@ -60,7 +59,6 @@ const listModuleTasks = async (req, res) => {
       req.params.moduleUuid,
       req.query,
     );
-    console.log(data);
     return res.status(200).json({
       count: data.length,
       data,
@@ -136,6 +134,38 @@ const deleteTask = async (req, res) => {
   }
 };
 
+const getDevelopersAndTesters = async (req, res) => {
+  try {
+    const companyId = req.user?.companyId;
+
+    if (!companyId) {
+      return res.status(403).json({
+        message: "Company information not found",
+      });
+    }
+    console.log(req.user);
+    console.log(" i am dlkjldjflkdj ojd;lkfj sd;lkfj;sdlk jf;lksd j;lsdkfj");
+    const employees =
+      await projectTaskService.getDevelopersAndTesters(companyId);
+    return res.status(200).json({
+      message: "Employees fetched successfully",
+      count: employees.length,
+      data: employees.map((employee) => ({
+        id: employee.id,
+        firstName: employee.user.firstName,
+        lastName: employee.user.lastName,
+        role: employee.user.role.name,
+      })),
+    });
+  } catch (error) {
+    console.error("Failed to fetch employees:", error);
+
+    return res.status(500).json({
+      message: "Failed to fetch employees",
+    });
+  }
+};
+
 module.exports = {
   createTask,
   listProjectTasks,
@@ -144,4 +174,5 @@ module.exports = {
   getTaskByUuid,
   updateTask,
   deleteTask,
+  getDevelopersAndTesters,
 };
