@@ -35,6 +35,12 @@ const projectPhaseRoutes = require("./routes/projectPhaseRoutes");
 const projectTaskRoutes = require("./routes/projectTaskRoutes");
 const projectLeadTechStackRoutes = require("./routes/projectLeadTechStackRoutes");
 const projectLeadTeamRoutes = require("./routes/projectLeadTeamRoutes");
+const projectModuleRoutes = require("./routes/projectModuleRoutes");
+const projectPhaseRoutes = require("./routes/projectPhaseRoutes");
+const projectTaskRoutes = require("./routes/projectTaskRoutes");
+const hrDashboardRoutes = require("./routes/hrDashboardRoutes");
+const projectLeadTeamRoutes = require("./routes/projectLeadTeamRoutes");
+const projectLeadTechStackRoutes = require("./routes/projectLeadTechStackRoutes");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -88,6 +94,12 @@ app.use("/api", projectPhaseRoutes);
 app.use("/api", projectTaskRoutes);
 app.use("/api/project-lead/tech-stack", projectLeadTechStackRoutes);
 app.use("/api/project-lead/team", projectLeadTeamRoutes);
+app.use("/api", projectModuleRoutes);
+app.use("/api", projectPhaseRoutes);
+app.use("/api", projectTaskRoutes);
+app.use("/api/hr/dashboard", hrDashboardRoutes);
+app.use("/api/project-lead/team", projectLeadTeamRoutes);
+app.use("/api/project-lead/tech-stack", projectLeadTechStackRoutes);
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
