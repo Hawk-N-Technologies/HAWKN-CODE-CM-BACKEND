@@ -4,7 +4,8 @@ const ProjectModule = require("../models/ProjectModule");
 const ProjectPhase = require("../models/ProjectPhase");
 const Employee = require("../models/Employee");
 const User = require("../models/User");
-
+const Role = require("../models/Role");
+const { Op } = require("@sequelize/core");
 const VALID_PRIORITIES = ["Low", "Medium", "High", "Critical"];
 const VALID_STATUSES = [
   "Backlog",
@@ -431,6 +432,41 @@ const deleteTask = async (uuid) => {
   return task;
 };
 
+const getDevelopersAndTesters = async (companyId) => {
+  return Employee.findAll({
+    where: {
+      companyId,
+      employmentStatus: {
+        [Op.ne]: "Exited",
+      },
+    },
+    attributes: ["id"],
+    include: [
+      {
+        model: User,
+        as: "user",
+        attributes: ["firstName", "lastName"],
+        where: {
+          isActive: true,
+        },
+        include: [
+          {
+            model: Role,
+            as: "role",
+            attributes: ["name"],
+            where: {
+              name: {
+                [Op.in]: ["developer", "tester"],
+              },
+            },
+          },
+        ],
+      },
+    ],
+    order: [[{ model: User, as: "user" }, "firstName", "ASC"]],
+  });
+};
+
 module.exports = {
   createTask,
   listProjectTasks,
@@ -439,4 +475,5 @@ module.exports = {
   getTaskByUuid,
   updateTask,
   deleteTask,
+  getDevelopersAndTesters,
 };

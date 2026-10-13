@@ -21,8 +21,7 @@ function authenticate(allowedRoles) {
         });
       }
 
-      req.user = decoded;
-      // Role authorization
+      req.user = decoded; // Role authorization
       if (
         Array.isArray(allowedRoles) &&
         allowedRoles.length > 0 &&
@@ -45,7 +44,6 @@ function authenticate(allowedRoles) {
         companyId: decoded.companyId,
         role: decoded.role,
       });
-console.log(" iam lkjdflkj kd lgoint to tnext")
       next();
     } catch (error) {
       logger.error("Authentication middleware failed", {
