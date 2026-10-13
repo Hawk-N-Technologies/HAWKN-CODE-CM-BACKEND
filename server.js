@@ -29,6 +29,9 @@ const operationsRoutes = require("./routes/operationsRoutes");
 const deploymentRoutes = require("./routes/deploymentRoutes");
 const clientProjectRoutes = require("./routes/clientProjectRoutes");
 const projectLeadPlanningRoutes = require("./routes/projectLeadPlanningRoutes");
+const projectModuleRoutes = require("./routes/projectModuleRoutes");
+const projectPhaseRoutes = require("./routes/projectPhaseRoutes");
+const projectTaskRoutes = require("./routes/projectTaskRoutes");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -76,6 +79,9 @@ app.use("/api/operations", operationsRoutes);
 app.use("/api/admin/deployments", deploymentRoutes);
 app.use("/api/client/projects", clientProjectRoutes);
 app.use("/api/project-lead/planning", projectLeadPlanningRoutes);
+app.use("/api", projectModuleRoutes);
+app.use("/api", projectPhaseRoutes);
+app.use("/api", projectTaskRoutes);
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;

@@ -23,6 +23,10 @@ const BRDReview = require("./BRDReview");
 const ProjectOperation = require("./ProjectOperation");
 const ProjectOperationDeveloper = require("./ProjectOperationDeveloper");
 const ProjectOperationTester = require("./ProjectOperationTester");
+const ProjectTask = require("./ProjectTask");
+const ProjectTaskDeveloper = require("./ProjectTaskDeveloper");
+const ProjectPhase = require("./ProjectPhase");
+const ProjectModule = require("./ProjectModule");
 
 /*
 |--------------------------------------------------------------------------
@@ -543,6 +547,84 @@ ProjectOperation.belongsToMany(Employee, {
     as: "testingOperationPlans",
   },
 });
+
+// Project → Modules
+Project.hasMany(ProjectModule, {
+  foreignKey: "projectId",
+  as: "modules",
+});
+
+ProjectModule.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+// Module → Phases
+ProjectModule.hasMany(ProjectPhase, {
+  foreignKey: "moduleId",
+  as: "phases",
+});
+
+ProjectPhase.belongsTo(ProjectModule, {
+  foreignKey: "moduleId",
+  as: "module",
+});
+
+// Project → Phases
+Project.hasMany(ProjectPhase, {
+  foreignKey: "projectId",
+  as: "phases",
+});
+
+ProjectPhase.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+// Module → Tasks
+ProjectModule.hasMany(ProjectTask, {
+  foreignKey: "moduleId",
+  as: "tasks",
+});
+
+ProjectTask.belongsTo(ProjectModule, {
+  foreignKey: "moduleId",
+  as: "module",
+});
+
+// Phase → Tasks
+ProjectPhase.hasMany(ProjectTask, {
+  foreignKey: "phaseId",
+  as: "tasks",
+});
+
+ProjectTask.belongsTo(ProjectPhase, {
+  foreignKey: "phaseId",
+  as: "phase",
+});
+
+// Task → Assignment records
+ProjectTask.hasMany(ProjectTaskDeveloper, {
+  foreignKey: "taskId",
+  as: "developerAssignments",
+});
+
+ProjectTaskDeveloper.belongsTo(ProjectTask, {
+  foreignKey: "taskId",
+  as: "task",
+});
+
+// Employee → Assignment records
+Employee.hasMany(ProjectTaskDeveloper, {
+  foreignKey: "employeeId",
+  as: "taskAssignments",
+});
+
+ProjectTaskDeveloper.belongsTo(Employee, {
+  foreignKey: "employeeId",
+  as: "employee",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -570,4 +652,9 @@ module.exports = {
   ProjectOperation,
   ProjectOperationDeveloper,
   ProjectOperationTester,
+
+  ProjectModule,
+  ProjectPhase,
+  ProjectTask,
+  ProjectTaskDeveloper,
 };

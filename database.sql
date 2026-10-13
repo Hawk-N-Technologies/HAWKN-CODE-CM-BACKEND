@@ -723,3 +723,133 @@ CREATE TABLE project_operation_testers (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (project_operation_id, employee_id)
 );
+
+
+
+CREATE TABLE project_modules (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    priority VARCHAR(20) NOT NULL DEFAULT 'Medium'
+        CHECK (priority IN ('Low', 'Medium', 'High', 'Critical')),
+    status VARCHAR(20) NOT NULL DEFAULT 'Not Started'
+        CHECK (status IN (
+            'Not Started', 'In Progress',
+            'Completed', 'On Hold'
+        )),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE (project_id, name)
+);
+
+CREATE INDEX idx_project_modules_project
+ON project_modules(project_id);
+
+
+
+CREATE TABLE project_phases (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+    module_id INTEGER NOT NULL
+        REFERENCES project_modules(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    start_date DATE,
+    end_date DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'Not Started'
+        CHECK (status IN (
+            'Not Started',
+            'In Progress',
+            'Completed',
+            'On Hold'
+        )),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_project_phases_dates
+        CHECK (
+            start_date IS NULL
+            OR end_date IS NULL
+            OR end_date >= start_date
+        ),
+    CONSTRAINT uq_project_module_phase_name
+        UNIQUE (module_id, name)
+);
+CREATE INDEX idx_project_phases_project
+    ON project_phases(project_id);
+CREATE INDEX idx_project_phases_module
+    ON project_phases(module_id);
+
+
+
+
+CREATE TABLE project_tasks (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+    module_id INTEGER
+        REFERENCES project_modules(id) ON DELETE SET NULL,
+    phase_id INTEGER
+        REFERENCES project_phases(id) ON DELETE SET NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    assigned_to INTEGER
+        REFERENCES employees(id) ON DELETE SET NULL,
+    created_by INTEGER
+        REFERENCES users(id) ON DELETE SET NULL,
+    priority VARCHAR(20) NOT NULL DEFAULT 'Medium'
+        CHECK (priority IN ('Low', 'Medium', 'High', 'Critical')),
+    status VARCHAR(20) NOT NULL DEFAULT 'Backlog'
+        CHECK (status IN (
+            'Backlog', 'To Do', 'In Progress',
+            'Code Review', 'Testing', 'Done'
+        )),
+    is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+    blocked_reason TEXT,
+    start_date DATE,
+    due_date DATE,
+    completed_at TIMESTAMP,
+    estimated_hours NUMERIC(8,2),
+    actual_hours NUMERIC(8,2),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (estimated_hours IS NULL OR estimated_hours >= 0),
+    CHECK (actual_hours IS NULL OR actual_hours >= 0),
+    CHECK (start_date IS NULL OR due_date IS NULL
+           OR due_date >= start_date),
+    CHECK (NOT is_blocked OR blocked_reason IS NOT NULL
+           OR is_blocked = TRUE)
+);
+
+
+
+
+
+
+
+
+
+CREATE INDEX idx_tasks_project_status
+ON project_tasks(project_id, status);
+CREATE INDEX idx_tasks_assignee_status
+ON project_tasks(assigned_to, status);
+CREATE INDEX idx_tasks_module
+ON project_tasks(module_id);
+CREATE INDEX idx_tasks_phase
+ON project_tasks(phase_id);
+CREATE INDEX idx_tasks_due_date
+ON project_tasks(project_id, due_date);
+
+
+
+
+
