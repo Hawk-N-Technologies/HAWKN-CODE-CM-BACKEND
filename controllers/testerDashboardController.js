@@ -1,6 +1,6 @@
 "use strict";
 
-const service = require("../services/testerDashBoardService");
+const service = require("../services//testerDashboardService");
 
 function handleError(error, res, next) {
   if (error.statusCode) {
@@ -32,10 +32,7 @@ async function getAssignedProjects(req, res, next) {
 
 async function getOverview(req, res, next) {
   try {
-    const data = await service.getOverview(
-      req.user.userId,
-      req.user.companyId,
-    );
+    const data = await service.getOverview(req.user.userId, req.user.companyId);
 
     return res.json({
       success: true,

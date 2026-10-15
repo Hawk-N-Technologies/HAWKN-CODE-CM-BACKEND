@@ -7,7 +7,7 @@ const router = express.Router();
 router.post("/login", authController.login);
 router.get(
   "/me",
-  authenticate(["admin", "hr", "bde", "developer", "client"]),
+  authenticate(["admin", "hr", "bde", "developer", "client", "tester"]),
   authController.getMe,
 );
 router.post("/logout", authController.logout);

@@ -21,6 +21,7 @@ const employeeService = require("../services/employeeService");
 const ProjectOperation = require("../models/ProjectOperation");
 const ProjectOperationTester = require("../models/ProjectOperationTester");
 const TaskTesting = require("../models/TaskTesting");
+const TaskTester = require("../models/TaskTester");
 const TASK_FIELDS = [
   "title",
   "description",
@@ -285,6 +286,45 @@ const listProjectTasks = async (projectUuid, filters = {}) => {
 
   return ProjectTask.findAll({
     where,
+    include: [
+      {
+        model: TaskTester,
+        as: "assignedTesters",
+        required: false,
+        attributes: ["id", "uuid", "testerId"],
+        include: [
+          {
+            model: Employee,
+            as: "tester",
+            required: false,
+            attributes: ["id"],
+            include: [
+              {
+                model: User,
+                as: "user",
+                required: false,
+                attributes: ["firstName", "lastName"],
+              },
+            ],
+          },
+          {
+            model: TaskTesting,
+            as: "testingAttempts",
+            required: false,
+            separate: true,
+            attributes: [
+              "uuid",
+              "attemptNumber",
+              "status",
+              "testNotes",
+              "testedAt",
+              "createdAt",
+            ],
+            order: [["attemptNumber", "DESC"]],
+          },
+        ],
+      },
+    ],
     order: [
       ["sortOrder", "ASC"],
       ["createdAt", "DESC"],
@@ -350,9 +390,49 @@ const listPhaseTasks = async (
   });
 };
 
-const getTaskByUuid = async (uuid) => {
+const getTaskByUuid = async (uuid, options = {}) => {
   const task = await ProjectTask.findOne({
     where: { uuid },
+    include: [
+      {
+        model: TaskTester,
+        as: "assignedTesters",
+        required: false,
+        attributes: ["id", "uuid", "testerId"],
+        include: [
+          {
+            model: Employee,
+            as: "tester",
+            required: false,
+            attributes: ["id"],
+            include: [
+              {
+                model: User,
+                as: "user",
+                required: false,
+                attributes: ["firstName", "lastName"],
+              },
+            ],
+          },
+          {
+            model: TaskTesting,
+            as: "testingAttempts",
+            required: false,
+            separate: true,
+            attributes: [
+              "uuid",
+              "attemptNumber",
+              "status",
+              "testNotes",
+              "testedAt",
+              "createdAt",
+            ],
+            order: [["attemptNumber", "DESC"]],
+          },
+        ],
+      },
+    ],
+    ...options,
   });
 
   if (!task) {
@@ -363,70 +443,148 @@ const getTaskByUuid = async (uuid) => {
 };
 
 const updateTask = async (uuid, body) => {
-  const task = await getTaskByUuid(uuid);
-  const values = buildTaskValues(body);
+  const transaction = await sequelize.startUnmanagedTransaction();
 
-  validateTaskValues({
-    title: values.title,
-    priority: values.priority,
-    status: values.status,
-    isBlocked: values.isBlocked,
-    blockedReason: values.blockedReason,
-    startDate: hasOwn(values, "startDate") ? values.startDate : task.startDate,
-    dueDate: hasOwn(values, "dueDate") ? values.dueDate : task.dueDate,
-    estimatedHours: values.estimatedHours,
-    actualHours: values.actualHours,
-    sortOrder: values.sortOrder,
-  });
+  try {
+    const task = await getTaskByUuid(uuid, { transaction });
+    const values = buildTaskValues(body);
 
-  const nextModuleId = hasOwn(values, "moduleId")
-    ? values.moduleId
-    : task.moduleId;
-
-  const nextPhaseId = hasOwn(values, "phaseId") ? values.phaseId : task.phaseId;
-
-  if (
-    (nextModuleId !== undefined && nextModuleId !== null) ||
-    (nextPhaseId !== undefined && nextPhaseId !== null)
-  ) {
-    await validateModuleAndPhase({
-      projectId: task.projectId,
-      moduleId: nextModuleId,
-      phaseId: nextPhaseId,
+    validateTaskValues({
+      title: values.title,
+      priority: values.priority,
+      status: values.status,
+      isBlocked: values.isBlocked,
+      blockedReason: values.blockedReason,
+      startDate: hasOwn(values, "startDate")
+        ? values.startDate
+        : task.startDate,
+      dueDate: hasOwn(values, "dueDate") ? values.dueDate : task.dueDate,
+      estimatedHours: values.estimatedHours,
+      actualHours: values.actualHours,
+      sortOrder: values.sortOrder,
     });
-  }
 
-  if (hasOwn(values, "assignedTo")) {
-    await validateAssignment(values.assignedTo);
-  }
+    const nextModuleId = hasOwn(values, "moduleId")
+      ? values.moduleId
+      : task.moduleId;
 
-  if (values.isBlocked === true) {
-    const reason = hasOwn(values, "blockedReason")
-      ? values.blockedReason
-      : task.blockedReason;
+    const nextPhaseId = hasOwn(values, "phaseId")
+      ? values.phaseId
+      : task.phaseId;
 
-    if (!String(reason || "").trim()) {
-      throw new Error("Blocked reason is required for a blocked task");
+    if (
+      (nextModuleId !== undefined && nextModuleId !== null) ||
+      (nextPhaseId !== undefined && nextPhaseId !== null)
+    ) {
+      await validateModuleAndPhase({
+        projectId: task.projectId,
+        moduleId: nextModuleId,
+        phaseId: nextPhaseId,
+      });
     }
-  }
 
-  if (values.isBlocked === false && !hasOwn(values, "blockedReason")) {
-    values.blockedReason = null;
-  }
+    if (hasOwn(values, "assignedTo")) {
+      await validateAssignment(values.assignedTo);
+    }
 
-  const nextStatus = hasOwn(values, "status") ? values.status : task.status;
+    if (values.isBlocked === true) {
+      const reason = hasOwn(values, "blockedReason")
+        ? values.blockedReason
+        : task.blockedReason;
 
-  if (nextStatus === "Done") {
-    if (task.status !== "Done") {
+      if (!String(reason || "").trim()) {
+        throw new Error("Blocked reason is required for a blocked task");
+      }
+    }
+
+    if (values.isBlocked === false && !hasOwn(values, "blockedReason")) {
+      values.blockedReason = null;
+    }
+
+    const previousStatus = task.status;
+    const nextStatus = hasOwn(values, "status")
+      ? values.status
+      : previousStatus;
+
+    if (nextStatus === "Done" && previousStatus !== "Done") {
       values.completedAt = new Date();
+    } else if (hasOwn(values, "status") && nextStatus !== "Done") {
+      values.completedAt = null;
     }
-  } else if (hasOwn(values, "status")) {
-    values.completedAt = null;
+
+    // Update the task within the transaction.
+    await task.update(values, { transaction });
+
+    // Create assignments and testing attempts only on transition to Testing.
+    if (nextStatus === "Testing" && previousStatus !== "Testing") {
+      const projectOperation = await ProjectOperation.findOne({
+        where: { projectId: task.projectId },
+        transaction,
+      });
+
+      if (projectOperation) {
+        const testers = await ProjectOperationTester.findAll({
+          where: {
+            projectOperationId: projectOperation.id,
+          },
+          transaction,
+        });
+
+        for (const tester of testers) {
+          // Find or create this tester's assignment for the task.
+          const [assignment] = await TaskTester.findOrCreate({
+            where: {
+              taskId: task.id,
+              testerId: tester.employeeId,
+            },
+            defaults: {
+              taskId: task.id,
+              testerId: tester.employeeId,
+            },
+            transaction,
+          });
+
+          // Find the latest attempt for this assignment.
+          const latestAttempt = await TaskTesting.findOne({
+            where: {
+              testTaskTesterId: assignment.id,
+            },
+            order: [
+              ["attemptNumber", "DESC"],
+              ["id", "DESC"],
+            ],
+            transaction,
+          });
+
+          // Create attempt 1, or retry if the previous attempt failed.
+          if (!latestAttempt || latestAttempt.status === "Failed") {
+            await TaskTesting.create(
+              {
+                projectId: task.projectId,
+                taskId: task.id,
+                testTaskTesterId: assignment.id,
+                attemptNumber: latestAttempt
+                  ? latestAttempt.attemptNumber + 1
+                  : 1,
+                status: "Pending",
+              },
+              { transaction },
+            );
+          }
+        }
+      }
+    }
+
+    await transaction.commit();
+
+    return task;
+  } catch (error) {
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+
+    throw error;
   }
-
-  await task.update(values);
-
-  return task;
 };
 
 const deleteTask = async (uuid) => {
@@ -508,6 +666,12 @@ async function getMyTasks(userId, companyId) {
         attributes: ["id", "uuid", "name"],
         required: false,
       },
+      {
+        model: TaskTesting,
+        as: "testingRecords",
+        attributes: ["uuid", "status", "testNotes", "testedAt", "createdAt"],
+        required: false,
+      },
     ],
     order: [
       ["sortOrder", "ASC"],
@@ -545,16 +709,13 @@ async function updateMyTaskStatus(taskUuid, userId, companyId, status) {
       ],
       transaction,
     });
+
     if (!task) {
       await transaction.rollback();
       return null;
     }
 
-    // 2. Update task status
-    task.status = status;
-    task.completedAt = status === "Done" ? new Date() : null;
-
-    await task.save({ transaction });
+    // 2. Check authorization before updating anything
     const isLead = await middleware.checkProjectLead(
       userId,
       companyId,
@@ -562,10 +723,19 @@ async function updateMyTaskStatus(taskUuid, userId, companyId, status) {
     );
 
     if ((status === "Testing" || status === "Done") && !isLead) {
-      return null;
+      throw new Error("Only the project lead can set this task status.");
     }
-    // 3. Create testing records when status is Testing
-    if (status === "Testing") {
+
+    const previousStatus = task.status;
+
+    // 3. Update task status
+    task.status = status;
+    task.completedAt = status === "Done" ? new Date() : null;
+
+    await task.save({ transaction });
+
+    // 4. Create assignments and testing attempts on transition to Testing
+    if (status === "Testing" && previousStatus !== "Testing") {
       const projectOperation = await ProjectOperation.findOne({
         where: {
           projectId: task.project.id,
@@ -582,22 +752,42 @@ async function updateMyTaskStatus(taskUuid, userId, companyId, status) {
         });
 
         for (const tester of testers) {
-          // Avoid duplicate records for the same task and tester
-          const existingTesting = await TaskTesting.findOne({
+          // Find or create the tester's assignment for this task
+          const [assignment] = await TaskTester.findOrCreate({
             where: {
-              projectId: task.project.id,
+              taskId: task.id,
+              testerId: tester.employeeId,
+            },
+            defaults: {
               taskId: task.id,
               testerId: tester.employeeId,
             },
             transaction,
           });
 
-          if (!existingTesting) {
+          // Get the tester's latest attempt
+          const latestAttempt = await TaskTesting.findOne({
+            where: {
+              testTaskTesterId: assignment.id,
+            },
+            order: [
+              ["attemptNumber", "DESC"],
+              ["id", "DESC"],
+            ],
+            transaction,
+          });
+
+          // First attempt, or retry after failure
+          if (!latestAttempt || latestAttempt.status === "Failed") {
             await TaskTesting.create(
               {
                 projectId: task.project.id,
                 taskId: task.id,
-                testerId: tester.employeeId,
+                testTaskTesterId: assignment.id,
+                attemptNumber: latestAttempt
+                  ? latestAttempt.attemptNumber + 1
+                  : 1,
+                status: "Pending",
               },
               { transaction },
             );
@@ -606,12 +796,14 @@ async function updateMyTaskStatus(taskUuid, userId, companyId, status) {
       }
     }
 
-    // 4. Commit after all database operations finish
     await transaction.commit();
 
     return task;
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+
     throw error;
   }
 }

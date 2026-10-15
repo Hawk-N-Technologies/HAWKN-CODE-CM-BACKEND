@@ -5,6 +5,7 @@ const {
   Project,
   Employee,
   User,
+  TaskTester,
   TaskTesting,
 } = require("../models/associations");
 
@@ -19,7 +20,11 @@ const fullName = (user) =>
 
 async function getTester(userId, companyId) {
   const employee = await Employee.findOne({
-    where: { userId, companyId, employmentStatus: "Active" },
+    where: {
+      userId,
+      companyId,
+      employmentStatus: "Active",
+    },
     attributes: ["id", "uuid", "userId", "companyId"],
   });
 
@@ -46,7 +51,6 @@ function serializeProject(operation) {
 }
 
 async function getAssignedProjectsForEmployee(employee) {
-  // Many-to-many assignments created by Admin → Operations.
   const operations = await ProjectOperation.findAll({
     where: { companyId: employee.companyId },
     attributes: ["id", "projectId", "testerId", "projectLeadId"],
@@ -90,16 +94,12 @@ async function getAssignedProjectsForEmployee(employee) {
     order: [["updatedAt", "DESC"]],
   });
 
-  // Support both the current multi-tester assignment and legacy tester_id.
   const assigned = operations.filter(
     (operation) =>
       operation.testerId === employee.id ||
-      (operation.testers || []).some(
-        (tester) => tester.id === employee.id,
-      ),
+      (operation.testers || []).some((tester) => tester.id === employee.id),
   );
 
-  // A project can be assigned through both mechanisms. Return it once.
   const unique = new Map();
 
   for (const operation of assigned) {
@@ -121,9 +121,15 @@ async function getOverview(userId, companyId) {
   const projects = await getAssignedProjectsForEmployee(employee);
 
   const testingRecords = await TaskTesting.findAll({
-    where: { testerId: employee.id },
     attributes: ["id", "status"],
     include: [
+      {
+        model: TaskTester,
+        as: "testerAssignment",
+        required: true,
+        where: { testerId: employee.id },
+        attributes: [],
+      },
       {
         model: Project,
         as: "project",
@@ -134,28 +140,36 @@ async function getOverview(userId, companyId) {
     ],
   });
 
-  const testingQueue = testingRecords.filter((record) =>
-    ["Pending", "In Progress"].includes(record.status),
-  ).length;
+  const testingSummary = {
+    pending: 0,
+    inProgress: 0,
+    passed: 0,
+    failed: 0,
+  };
+
+  for (const record of testingRecords) {
+    switch (record.status) {
+      case "Pending":
+        testingSummary.pending++;
+        break;
+      case "In Progress":
+        testingSummary.inProgress++;
+        break;
+      case "Passed":
+        testingSummary.passed++;
+        break;
+      case "Failed":
+        testingSummary.failed++;
+        break;
+    }
+  }
 
   return {
     assignedProjects: projects.length,
-    testingQueue,
-    // There is no dedicated bug or retesting model in the supplied dev ZIP.
-    // Do not report fabricated zero counts as if they were live data.
+    testingQueue: testingSummary.pending + testingSummary.inProgress,
     openBugs: null,
     retesting: null,
-    testingSummary: {
-      pending: testingRecords.filter((record) => record.status === "Pending")
-        .length,
-      inProgress: testingRecords.filter(
-        (record) => record.status === "In Progress",
-      ).length,
-      passed: testingRecords.filter((record) => record.status === "Passed")
-        .length,
-      failed: testingRecords.filter((record) => record.status === "Failed")
-        .length,
-    },
+    testingSummary,
   };
 }
 

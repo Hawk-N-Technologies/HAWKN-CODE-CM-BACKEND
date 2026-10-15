@@ -847,32 +847,68 @@ ON project_tasks(project_id, due_date);
 
 
 
-
-
-
-
-
-
-CREATE TABLE task_testing (
+    CREATE TABLE task_testing (
     id SERIAL PRIMARY KEY,
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+
     project_id INTEGER NOT NULL
         REFERENCES projects(id) ON DELETE CASCADE,
+
     task_id INTEGER NOT NULL
         REFERENCES project_tasks(id) ON DELETE CASCADE,
-    tester_id INTEGER NOT NULL
-        REFERENCES employees(id) ON DELETE RESTRICT,
+
+
+    attempt_number INTEGER NOT NULL DEFAULT 1
+        CHECK (attempt_number > 0),
+
     status VARCHAR(20) NOT NULL DEFAULT 'Pending'
         CHECK (status IN (
-            'Pending', 'In Progress', 'Passed', 'Failed'
+            'Pending',
+            'In Progress',
+            'Passed',
+            'Failed'
         )),
+
     test_notes TEXT,
-    tested_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    tested_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_task_testing_attempt
+        UNIQUE (task_id, attempt_number)
 );
 
-CREATE INDEX idx_task_testing_task
-    ON task_testing(task_id);
 CREATE INDEX idx_task_testing_tester_status
-    ON task_testing(tester_id, status);
+    ON task_testing (tester_id, status);
+
+CREATE INDEX idx_task_testing_task
+    ON task_testing (task_id);
+
+CREATE INDEX idx_task_testing_project
+    ON task_testing (project_id);
+
+
+
+
+CREATE TABLE test_task_testers (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+
+    task_id BIGINT NOT NULL
+        REFERENCES project_tasks(id) ON DELETE CASCADE,
+
+    tester_id BIGINT NOT NULL
+        REFERENCES employees(id) ON DELETE CASCADE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_test_task_testers_task_tester
+        UNIQUE (task_id, tester_id)
+);
+
+CREATE INDEX idx_test_task_testers_tester
+    ON test_task_testers (tester_id);
+
+CREATE INDEX idx_test_task_testers_task
+    ON test_task_testers (task_id);

@@ -1,4 +1,5 @@
 "use strict";
+
 const { DataTypes } = require("@sequelize/core");
 const sequelize = require("../config/db");
 
@@ -30,10 +31,21 @@ const TaskTesting = sequelize.define(
       field: "task_id",
     },
 
-    testerId: {
+    testTaskTesterId: {
+      type: DataTypes.BIGINT,
+      allowNull: false,
+      field: "test_task_tester_id",
+    },
+
+    attemptNumber: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      field: "tester_id",
+      defaultValue: 1,
+      field: "attempt_number",
+      validate: {
+        min: 1,
+        isInt: true,
+      },
     },
 
     status: {
@@ -61,6 +73,25 @@ const TaskTesting = sequelize.define(
     tableName: "task_testing",
     timestamps: true,
     underscored: true,
+    indexes: [
+      {
+        name: "uq_task_testing_attempt",
+        unique: true,
+        fields: ["test_task_tester_id", "attempt_number"],
+      },
+      {
+        name: "idx_task_testing_assignment_status",
+        fields: ["test_task_tester_id", "status"],
+      },
+      {
+        name: "idx_task_testing_task",
+        fields: ["task_id"],
+      },
+      {
+        name: "idx_task_testing_project",
+        fields: ["project_id"],
+      },
+    ],
   },
 );
 

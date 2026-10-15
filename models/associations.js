@@ -28,6 +28,7 @@ const ProjectTaskDeveloper = require("./ProjectTaskDeveloper");
 const ProjectPhase = require("./ProjectPhase");
 const ProjectModule = require("./ProjectModule");
 const TaskTesting = require("./TaskTesting");
+const TaskTester = require("./TaskTester");
 
 /*
 |--------------------------------------------------------------------------
@@ -632,11 +633,9 @@ Employee.hasMany(ProjectTaskDeveloper, {
 ProjectTaskDeveloper.belongsTo(Employee, {
   foreignKey: "employeeId",
   as: "employee",
-});
-
-/*
+}); /*
 |--------------------------------------------------------------------------
-| Project - Task Testing
+| ProjectTask - TaskTesting
 |--------------------------------------------------------------------------
 */
 
@@ -652,7 +651,7 @@ TaskTesting.belongsTo(ProjectTask, {
 
 /*
 |--------------------------------------------------------------------------
-| Project - Task Testing
+| Project - TaskTesting
 |--------------------------------------------------------------------------
 */
 
@@ -668,20 +667,51 @@ TaskTesting.belongsTo(Project, {
 
 /*
 |--------------------------------------------------------------------------
-| Employee - Task Testing
+| TaskTester - Employee
 |--------------------------------------------------------------------------
 */
 
-Employee.hasMany(TaskTesting, {
+Employee.hasMany(TaskTester, {
   foreignKey: "testerId",
-  as: "taskTestingAssignments",
+  as: "taskTestAssignments",
 });
 
-TaskTesting.belongsTo(Employee, {
+TaskTester.belongsTo(Employee, {
   foreignKey: "testerId",
   as: "tester",
 });
 
+/*
+|--------------------------------------------------------------------------
+| ProjectTask - TaskTester
+|--------------------------------------------------------------------------
+*/
+
+ProjectTask.hasMany(TaskTester, {
+  foreignKey: "taskId",
+  as: "assignedTesters",
+});
+
+TaskTester.belongsTo(ProjectTask, {
+  foreignKey: "taskId",
+  as: "task",
+});
+
+/*
+|--------------------------------------------------------------------------
+| TaskTester - TaskTesting
+|--------------------------------------------------------------------------
+*/
+
+TaskTester.hasMany(TaskTesting, {
+  foreignKey: "testTaskTesterId",
+  as: "testingAttempts",
+});
+
+TaskTesting.belongsTo(TaskTester, {
+  foreignKey: "testTaskTesterId",
+  as: "testerAssignment",
+});
 module.exports = {
   Company,
   CompanyProfile,
