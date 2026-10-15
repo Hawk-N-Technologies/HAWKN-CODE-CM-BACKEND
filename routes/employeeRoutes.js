@@ -7,17 +7,30 @@ const { createEmployeeSchema } = require("../validations/employee.validation");
 
 const router = express.Router();
 
-router.get("/roles", authenticate(["hr"]), employeeController.getRoles);
+router.get(
+  "/roles",
+  authenticate(["hr", "admin"]),
+  employeeController.getRoles,
+);
 
 router.get("/", authenticate(["hr"]), employeeController.getEmployees);
-
+router.get("/getPeople", authenticate(["admin"]), employeeController.getPeople);
 router.get("/:id", authenticate(["hr"]), employeeController.getEmployee);
-
+router.post(
+  "/create",
+  authenticate(["admin"]),
+  employeeController.createPerson,
+);
 router.post(
   "/",
   authenticate(["hr"]),
   validate(createEmployeeSchema),
   employeeController.createEmployee,
+);
+router.put(
+  "/people/:id",
+  authenticate(["admin"]),
+  employeeController.updatePerson,
 );
 
 // Update employee

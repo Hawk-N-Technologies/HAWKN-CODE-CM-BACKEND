@@ -7,11 +7,11 @@
  */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
+    const exists = await queryInterface.tableExists("employee_salaries");
 
-    const uuidDefault = isMysql
-      ? Sequelize.literal("(UUID())")
-      : Sequelize.literal("gen_random_uuid()");
+    if (exists) {
+      return;
+    }
 
     await queryInterface.createTable("employee_salaries", {
       id: {
@@ -33,12 +33,10 @@ module.exports = {
         type: Sequelize.INTEGER,
         allowNull: false,
         unique: true,
-
         references: {
           table: "employees",
           field: "id",
         },
-
         onDelete: "CASCADE",
         onUpdate: "CASCADE",
       },

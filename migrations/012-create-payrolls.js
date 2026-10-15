@@ -9,11 +9,11 @@
  */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
-
-    const uuidDefault = isMysql
-      ? Sequelize.literal("(UUID())")
-      : Sequelize.literal("gen_random_uuid()");
+    const exist = await queryInterface.tableExists("payrolls");
+    if (exist) {
+      console.log("Payroll already exist");
+      return;
+    }
 
     await queryInterface.createTable("payrolls", {
       id: {

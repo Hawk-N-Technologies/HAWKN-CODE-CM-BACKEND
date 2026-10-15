@@ -2,10 +2,12 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
-    const uuidDefault = isMysql
-      ? Sequelize.literal("(UUID())")
-      : Sequelize.literal("gen_random_uuid()");
+    const exists = await queryInterface.tableExists("company_profiles");
+
+    if (exists) {
+      console.log("company_profiles table already exists. Skipping migration.");
+      return;
+    }
 
     await queryInterface.createTable("company_profiles", {
       id: {
@@ -80,6 +82,13 @@ module.exports = {
   },
 
   async down(queryInterface) {
+    const exists = await queryInterface.tableExists("company_profiles");
+
+    if (!exists) {
+      console.log("company_profiles table does not exist. Skipping rollback.");
+      return;
+    }
+
     await queryInterface.dropTable("company_profiles");
   },
 };

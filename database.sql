@@ -291,6 +291,25 @@ CREATE INDEX idx_payrolls_company_period ON payrolls (company_id, pay_period);
 
 
 
+CREATE TABLE company_holidays (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    company_id INTEGER NOT NULL,
+    holiday_date DATE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    is_paid BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_company_holidays_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+    CONSTRAINT uq_company_holiday
+        UNIQUE (company_id, holiday_date)
+);
+
+
+
 CREATE TABLE employee_salaries (
     id SERIAL PRIMARY KEY,
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
@@ -304,3 +323,592 @@ CREATE TABLE employee_salaries (
     CONSTRAINT chk_employee_salaries_salary_positive
         CHECK (salary > 0)
 );
+
+
+
+CREATE TABLE employee_leaves (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    employee_id INTEGER NOT NULL,
+    company_id INTEGER NOT NULL,
+    leave_date DATE NOT NULL,
+    leave_type VARCHAR(30) NOT NULL,
+    leave_session VARCHAR(20) NOT NULL DEFAULT 'FULL_DAY',
+    leave_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    -- NULL while PENDING or REJECTED
+    -- TRUE/FALSE after HR approves
+    is_paid BOOLEAN,
+    reason TEXT,
+    reviewed_by INTEGER,
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_employee_leave_employee
+        FOREIGN KEY (employee_id)
+        REFERENCES employees(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_employee_leave_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_employee_leave_reviewer
+        FOREIGN KEY (reviewed_by)
+        REFERENCES users(id)
+        ON DELETE SET NULL,
+    CONSTRAINT chk_employee_leave_status
+        CHECK (
+            leave_status IN (
+                'PENDING',
+                'APPROVED',
+                'REJECTED'
+            )
+        ),
+    CONSTRAINT chk_employee_leave_type
+        CHECK (
+            leave_type IN (
+                'CASUAL',
+                'SICK',
+                'ANNUAL',
+                'UNPAID',
+                'OTHER'
+            )
+        ),
+    CONSTRAINT chk_employee_leave_session
+        CHECK (
+            leave_session IN (
+                'FULL_DAY',
+                'FIRST_HALF',
+                'SECOND_HALF'
+            )
+        )
+);
+
+
+
+
+
+CREATE TABLE employee_bonuses (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    company_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    pay_period DATE NOT NULL,
+    bonus_type VARCHAR(30) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    reason TEXT,
+    created_by INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_employee_bonuses_company
+        FOREIGN KEY (company_id) REFERENCES companies(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_employee_bonuses_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_employee_bonuses_created_by
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT chk_employee_bonuses_amount_positive CHECK (amount > 0),
+    CONSTRAINT chk_employee_bonuses_period_first_of_month CHECK (EXTRACT(DAY FROM pay_period) = 1),
+    CONSTRAINT chk_employee_bonuses_type
+        CHECK (bonus_type IN ('Performance', 'Festival', 'Referral', 'Joining', 'Other'))
+);
+CREATE INDEX idx_employee_bonuses_user_period ON employee_bonuses (company_id, user_id, pay_period);
+
+CREATE TABLE salary_increments (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    employee_id INTEGER NOT NULL,
+    previous_salary NUMERIC(12,2) NOT NULL,
+    new_salary NUMERIC(12,2) NOT NULL,
+    effective_date DATE NOT NULL,
+    reason TEXT,
+    created_by INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_salary_increments_employee
+        FOREIGN KEY (employee_id) REFERENCES employees(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_salary_increments_created_by
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT chk_salary_increments_previous_positive CHECK (previous_salary > 0),
+    CONSTRAINT chk_salary_increments_is_increase CHECK (new_salary > previous_salary)
+);
+CREATE INDEX idx_salary_increments_employee ON salary_increments (employee_id);
+
+CREATE TABLE internship_probation_periods (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    company_id INTEGER NOT NULL,
+    employee_id INTEGER NOT NULL,
+    period_type VARCHAR(20) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    original_end_date DATE NOT NULL,
+    extension_count INTEGER NOT NULL DEFAULT 0,
+    stipend NUMERIC(12,2),
+    performance VARCHAR(30) NOT NULL DEFAULT 'Pending',
+    notes TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'Active',
+    closed_at TIMESTAMP WITH TIME ZONE,
+    created_by INTEGER,
+    closed_by INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ipp_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_ipp_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_ipp_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT fk_ipp_closed_by FOREIGN KEY (closed_by) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT chk_ipp_type CHECK (period_type IN ('Internship', 'Probation')),
+    CONSTRAINT chk_ipp_status CHECK (status IN ('Active', 'Confirmed', 'Converted', 'Ended', 'Terminated')),
+    CONSTRAINT chk_ipp_performance CHECK (performance IN ('Pending', 'Needs Improvement', 'Good', 'Excellent')),
+    CONSTRAINT chk_ipp_dates CHECK (end_date > start_date AND original_end_date > start_date),
+    CONSTRAINT chk_ipp_extension CHECK (extension_count >= 0 AND end_date >= original_end_date),
+    CONSTRAINT chk_ipp_stipend CHECK (stipend IS NULL OR (period_type = 'Internship' AND stipend >= 0)),
+    CONSTRAINT chk_ipp_converted_only_internship CHECK (status NOT IN ('Converted', 'Ended') OR period_type = 'Internship'),
+    CONSTRAINT chk_ipp_closed_consistency CHECK ((status = 'Active') = (closed_at IS NULL))
+);
+-- Only ONE active period per employee
+CREATE UNIQUE INDEX uq_ipp_one_active_per_employee
+    ON internship_probation_periods (employee_id) WHERE status = 'Active';
+CREATE INDEX idx_ipp_company_status_end
+    ON internship_probation_periods (company_id, status, end_date);
+
+
+
+CREATE TABLE clients (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    user_id INTEGER NOT NULL UNIQUE,
+    company_id INTEGER NOT NULL,
+    phone VARCHAR(30),
+    address TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_clients_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_clients_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+    CONSTRAINT uq_clients_company_user
+        UNIQUE (company_id, user_id)
+);
+
+
+
+
+
+CREATE TABLE projects (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    company_id INTEGER NOT NULL,
+    client_id INTEGER NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    project_lead_id INTEGER,
+    tier VARCHAR(30) NOT NULL DEFAULT 'Tier I',
+    start_date DATE,
+    deadline DATE,
+    internal_deadline DATE,
+    status VARCHAR(50) NOT NULL DEFAULT 'Planning',
+    progress INTEGER NOT NULL DEFAULT 0,
+    description TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_projects_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_projects_client
+        FOREIGN KEY (client_id)
+        REFERENCES clients(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT fk_projects_lead
+        FOREIGN KEY (project_lead_id)
+        REFERENCES employees(id)
+        ON DELETE SET NULL,
+    CONSTRAINT chk_projects_tier
+        CHECK (tier IN ('Tier I', 'Tier II', 'Tier III')),
+    CONSTRAINT chk_projects_status
+        CHECK (
+            status IN (
+                'Planning',
+                'In Development',
+                'Testing',
+                'Completed',
+                'On Hold',
+                'Cancelled'
+            )
+        ),
+    CONSTRAINT chk_projects_progress
+        CHECK (progress >= 0 AND progress <= 100),
+    CONSTRAINT chk_project_dates
+        CHECK (
+            deadline IS NULL
+            OR start_date IS NULL
+            OR deadline >= start_date
+        )
+);
+
+
+CREATE TABLE brds (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL,
+    company_id INTEGER NOT NULL,
+    client_id INTEGER NOT NULL
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(40) NOT NULL DEFAULT 'DRAFT',
+    created_by INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_brds_project
+        FOREIGN KEY (project_id)
+        REFERENCES projects(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brds_company
+        FOREIGN KEY (company_id)
+        REFERENCES companies(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brds_client
+        FOREIGN KEY (client_id)
+        REFERENCES clients(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT fk_brds_created_by
+        FOREIGN KEY (created_by)
+        REFERENCES users(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT chk_brds_status
+        CHECK (
+            status IN (
+                'DRAFT',
+                'PENDING_ADMIN_APPROVAL',
+                'ADMIN_REJECTED',
+                'PENDING_CLIENT_APPROVAL',
+                'CLIENT_REJECTED',
+                'APPROVED'
+            )
+        )
+);
+
+CREATE TABLE brd_versions (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    brd_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_url TEXT NOT NULL,
+    storage_key TEXT,
+    mime_type VARCHAR(100),
+    file_size BIGINT,
+    uploaded_by INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_brd_versions_brd
+        FOREIGN KEY (brd_id)
+        REFERENCES brds(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brd_versions_uploaded_by
+        FOREIGN KEY (uploaded_by)
+        REFERENCES users(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT uq_brd_version
+        UNIQUE (brd_id, version)
+);
+
+
+CREATE TABLE brd_reviews (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    brd_id INTEGER NOT NULL,
+    brd_version_id INTEGER NOT NULL,
+    reviewer_id INTEGER NOT NULL,
+    reviewer_role VARCHAR(30) NOT NULL,
+    action VARCHAR(30) NOT NULL,
+    message TEXT,
+    reviewed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_brd_reviews_brd
+        FOREIGN KEY (brd_id)
+        REFERENCES brds(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brd_reviews_version
+        FOREIGN KEY (brd_version_id)
+        REFERENCES brd_versions(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_brd_reviews_reviewer
+        FOREIGN KEY (reviewer_id)
+        REFERENCES users(id)
+        ON DELETE RESTRICT,
+    CONSTRAINT chk_brd_reviews_role
+        CHECK (
+            reviewer_role IN ('admin', 'client')
+        ),
+    CONSTRAINT chk_brd_reviews_action
+        CHECK (
+            action IN ('APPROVED', 'REJECTED')
+        )
+);
+
+
+
+CREATE TABLE project_operations (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL UNIQUE
+        REFERENCES projects(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    company_id INTEGER NOT NULL
+        REFERENCES companies(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    project_lead_id INTEGER
+        REFERENCES employees(id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    tester_id INTEGER
+        REFERENCES employees(id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    technology_stack VARCHAR(100),
+    er_diagram_path VARCHAR(500),
+    flowchart_path VARCHAR(500),
+    er_diagram_status VARCHAR(20) NOT NULL DEFAULT 'NOT_UPLOADED'
+        CHECK (er_diagram_status IN ('UPLOADED', 'NOT_UPLOADED')),
+    flowchart_status VARCHAR(20) NOT NULL DEFAULT 'NOT_UPLOADED'
+        CHECK (flowchart_status IN ('UPLOADED', 'NOT_UPLOADED')),
+    planning_status VARCHAR(20) NOT NULL DEFAULT 'NOT_STARTED'
+        CHECK (
+            planning_status IN (
+                'NOT_STARTED',
+                'IN_PROGRESS',
+                'COMPLETED'
+            )
+        ),
+    created_by INTEGER
+        REFERENCES users(id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    updated_by INTEGER
+        REFERENCES users(id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE project_operation_developers (
+    project_operation_id INTEGER NOT NULL
+        REFERENCES project_operations(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    employee_id INTEGER NOT NULL
+        REFERENCES employees(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_operation_id, employee_id)
+);
+CREATE TABLE project_operation_testers (
+    project_operation_id INTEGER NOT NULL
+        REFERENCES project_operations(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    employee_id INTEGER NOT NULL
+        REFERENCES employees(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_operation_id, employee_id)
+);
+
+
+
+CREATE TABLE project_modules (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    priority VARCHAR(20) NOT NULL DEFAULT 'Medium'
+        CHECK (priority IN ('Low', 'Medium', 'High', 'Critical')),
+    status VARCHAR(20) NOT NULL DEFAULT 'Not Started'
+        CHECK (status IN (
+            'Not Started', 'In Progress',
+            'Completed', 'On Hold'
+        )),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE (project_id, name)
+);
+
+CREATE INDEX idx_project_modules_project
+ON project_modules(project_id);
+
+
+
+CREATE TABLE project_phases (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+    module_id INTEGER NOT NULL
+        REFERENCES project_modules(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    start_date DATE,
+    end_date DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'Not Started'
+        CHECK (status IN (
+            'Not Started',
+            'In Progress',
+            'Completed',
+            'On Hold'
+        )),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_project_phases_dates
+        CHECK (
+            start_date IS NULL
+            OR end_date IS NULL
+            OR end_date >= start_date
+        ),
+    CONSTRAINT uq_project_module_phase_name
+        UNIQUE (module_id, name)
+);
+CREATE INDEX idx_project_phases_project
+    ON project_phases(project_id);
+CREATE INDEX idx_project_phases_module
+    ON project_phases(module_id);
+
+
+
+
+CREATE TABLE project_tasks (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+    module_id INTEGER
+        REFERENCES project_modules(id) ON DELETE SET NULL,
+    phase_id INTEGER
+        REFERENCES project_phases(id) ON DELETE SET NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    assigned_to INTEGER
+        REFERENCES employees(id) ON DELETE SET NULL,
+    created_by INTEGER
+        REFERENCES users(id) ON DELETE SET NULL,
+    priority VARCHAR(20) NOT NULL DEFAULT 'Medium'
+        CHECK (priority IN ('Low', 'Medium', 'High', 'Critical')),
+    status VARCHAR(20) NOT NULL DEFAULT 'Backlog'
+        CHECK (status IN (
+            'Backlog', 'To Do', 'In Progress',
+            'Code Review', 'Testing', 'Done'
+        )),
+    is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+    blocked_reason TEXT,
+    start_date DATE,
+    due_date DATE,
+    completed_at TIMESTAMP,
+    estimated_hours NUMERIC(8,2),
+    actual_hours NUMERIC(8,2),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (estimated_hours IS NULL OR estimated_hours >= 0),
+    CHECK (actual_hours IS NULL OR actual_hours >= 0),
+    CHECK (start_date IS NULL OR due_date IS NULL
+           OR due_date >= start_date),
+    CHECK (NOT is_blocked OR blocked_reason IS NOT NULL
+           OR is_blocked = TRUE)
+);
+
+
+CREATE INDEX idx_tasks_project_status
+ON project_tasks(project_id, status);
+CREATE INDEX idx_tasks_assignee_status
+ON project_tasks(assigned_to, status);
+CREATE INDEX idx_tasks_module
+ON project_tasks(module_id);
+CREATE INDEX idx_tasks_phase
+ON project_tasks(phase_id);
+CREATE INDEX idx_tasks_due_date
+ON project_tasks(project_id, due_date);
+
+
+
+
+
+
+    CREATE TABLE task_testing (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+
+    task_id INTEGER NOT NULL
+        REFERENCES project_tasks(id) ON DELETE CASCADE,
+
+
+    attempt_number INTEGER NOT NULL DEFAULT 1
+        CHECK (attempt_number > 0),
+
+    status VARCHAR(20) NOT NULL DEFAULT 'Pending'
+        CHECK (status IN (
+            'Pending',
+            'In Progress',
+            'Passed',
+            'Failed'
+        )),
+
+    test_notes TEXT,
+    tested_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_task_testing_attempt
+        UNIQUE (task_id, attempt_number)
+);
+
+CREATE INDEX idx_task_testing_tester_status
+    ON task_testing (tester_id, status);
+
+CREATE INDEX idx_task_testing_task
+    ON task_testing (task_id);
+
+CREATE INDEX idx_task_testing_project
+    ON task_testing (project_id);
+
+
+
+
+CREATE TABLE test_task_testers (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+
+    task_id BIGINT NOT NULL
+        REFERENCES project_tasks(id) ON DELETE CASCADE,
+
+    tester_id BIGINT NOT NULL
+        REFERENCES employees(id) ON DELETE CASCADE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_test_task_testers_task_tester
+        UNIQUE (task_id, tester_id)
+);
+
+CREATE INDEX idx_test_task_testers_tester
+    ON test_task_testers (tester_id);
+
+CREATE INDEX idx_test_task_testers_task
+    ON test_task_testers (task_id);

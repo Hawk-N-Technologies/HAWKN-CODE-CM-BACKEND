@@ -5,7 +5,6 @@ function authenticate(allowedRoles) {
   return function (req, res, next) {
     try {
       const token = req.cookies.access_token;
-
       if (!token) {
         return res.status(401).json({
           success: false,
@@ -22,9 +21,7 @@ function authenticate(allowedRoles) {
         });
       }
 
-      req.user = decoded;
-
-      // Role authorization
+      req.user = decoded; // Role authorization
       if (
         Array.isArray(allowedRoles) &&
         allowedRoles.length > 0 &&
@@ -47,7 +44,6 @@ function authenticate(allowedRoles) {
         companyId: decoded.companyId,
         role: decoded.role,
       });
-
       next();
     } catch (error) {
       logger.error("Authentication middleware failed", {

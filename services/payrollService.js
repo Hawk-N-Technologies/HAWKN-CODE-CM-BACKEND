@@ -320,9 +320,77 @@ async function processPayroll(uuid, companyId, processedByUserId) {
   }
 }
 
+/**
+ * Edit a Pending payroll: amounts + payment method only.
+ * Net salary is recalculated here. One conditional UPDATE (status = Pending),
+ * so a payroll processed a split second earlier can't be edited.
+ */
+async function updatePayroll(uuid, companyId, data) {
+  try {
+    const netPaise =
+      toPaise(data.baseSalary) - toPaise(data.lopDeduction) + toPaise(data.bonus);
+
+    const [updatedCount] = await Payroll.update(
+      {
+        baseSalary: toRupees(toPaise(data.baseSalary)),
+        lopDeduction: toRupees(toPaise(data.lopDeduction)),
+        bonus: toRupees(toPaise(data.bonus)),
+        netSalary: toRupees(netPaise),
+        paymentMethod: data.paymentMethod,
+      },
+      { where: { uuid, companyId, status: "Pending" } },
+    );
+
+    if (updatedCount === 0) {
+      const payroll = await Payroll.findOne({ where: { uuid, companyId }, attributes: ["status"] });
+      if (!payroll) throw httpError(404, "Payroll record not found");
+      throw httpError(409, "Processed payroll can't be edited");
+    }
+
+    logger.info("Payroll updated", { companyId, payrollUuid: uuid });
+    return getPayrollByUuid(uuid, companyId);
+  } catch (error) {
+    logger.error("Failed to update payroll", {
+      companyId,
+      payrollUuid: uuid,
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
+/**
+ * Delete a Pending payroll (e.g. created by mistake).
+ * Processed payroll is financial history and can never be deleted.
+ */
+async function deletePayroll(uuid, companyId) {
+  try {
+    const deletedCount = await Payroll.destroy({
+      where: { uuid, companyId, status: "Pending" },
+    });
+
+    if (deletedCount === 0) {
+      const payroll = await Payroll.findOne({ where: { uuid, companyId }, attributes: ["status"] });
+      if (!payroll) throw httpError(404, "Payroll record not found");
+      throw httpError(409, "Processed payroll can't be deleted");
+    }
+
+    logger.info("Payroll deleted", { companyId, payrollUuid: uuid });
+  } catch (error) {
+    logger.error("Failed to delete payroll", {
+      companyId,
+      payrollUuid: uuid,
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   searchEmployees,
   listPayroll,
   createPayroll,
   processPayroll,
+  updatePayroll,
+  deletePayroll
 };

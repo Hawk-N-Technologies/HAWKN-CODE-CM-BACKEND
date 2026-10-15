@@ -2,11 +2,15 @@ const bcrypt = require("bcrypt");
 const User = require("../models/User");
 const Role = require("../models/Role");
 const Company = require("../models/Company");
+const CompanyProfile = require("../models/CompanyProfile");
 const logger = require("../utils/logger");
 
 async function seedUsers() {
   try {
-    // 1. Create required roles if they don't exist
+    // ============================================================
+    // 1. Create required roles
+    // ============================================================
+
     const roles = [
       {
         name: "admin",
@@ -56,8 +60,11 @@ async function seedUsers() {
       });
     }
 
+    // ============================================================
     // 2. Find or create company
-    const [company, created] = await Company.findOrCreate({
+    // ============================================================
+
+    const [company, companyCreated] = await Company.findOrCreate({
       where: {
         name: "Hawk'N Technologies",
       },
@@ -66,7 +73,7 @@ async function seedUsers() {
       },
     });
 
-    if (created) {
+    if (companyCreated) {
       logger.info("Company created successfully", {
         companyId: company.id,
         name: company.name,
@@ -78,7 +85,40 @@ async function seedUsers() {
       });
     }
 
-    // 3. Only seed Admin and HR users
+    // ============================================================
+    // 3. Find or create company profile
+    // ============================================================
+
+    const [companyProfile, profileCreated] = await CompanyProfile.findOrCreate({
+      where: {
+        companyId: company.id,
+      },
+      defaults: {
+        companyId: company.id,
+        officialCompanyName: company.name,
+        officialEmail: "admin@gmail.com",
+        vision: "",
+        mission: "",
+        blogContent: "",
+      },
+    });
+
+    if (profileCreated) {
+      logger.info("Company profile created successfully", {
+        profileId: companyProfile.id,
+        companyId: company.id,
+      });
+    } else {
+      logger.info("Company profile already exists", {
+        profileId: companyProfile.id,
+        companyId: company.id,
+      });
+    }
+
+    // ============================================================
+    // 4. Users to seed
+    // ============================================================
+
     const users = [
       {
         firstName: "Admin",
@@ -96,7 +136,10 @@ async function seedUsers() {
       },
     ];
 
-    // 4. Create users
+    // ============================================================
+    // 5. Create users
+    // ============================================================
+
     for (const user of users) {
       const roleId = roleMap[user.roleName];
 
@@ -120,7 +163,7 @@ async function seedUsers() {
 
       const passwordHash = await bcrypt.hash(user.password, 12);
 
-      await User.create({
+      const createdUser = await User.create({
         companyId: company.id,
         roleId,
         firstName: user.firstName,
@@ -131,10 +174,16 @@ async function seedUsers() {
       });
 
       logger.info("User seeded successfully", {
+        userId: createdUser.id,
         email: user.email,
         role: user.roleName,
+        companyId: company.id,
       });
     }
+
+    // ============================================================
+    // 6. Completed
+    // ============================================================
 
     logger.info("User seeding completed successfully");
   } catch (error) {

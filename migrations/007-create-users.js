@@ -2,10 +2,12 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
-    const uuidDefault = isMysql
-      ? Sequelize.literal("(UUID())")
-      : Sequelize.literal("gen_random_uuid()");
+    const exists = await queryInterface.tableExists("users");
+
+    if (exists) {
+      console.log("users table already exists. Skipping migration.");
+      return;
+    }
 
     await queryInterface.createTable("users", {
       id: {
@@ -87,27 +89,21 @@ module.exports = {
       },
     });
 
-    // Add the composite unique constraint
-    try {
-      await queryInterface.addConstraint("users", {
-        fields: ["company_id", "email"],
-        type: "unique",
-        name: "uq_users_company_email",
-      });
-    } catch (err) {
-      if (
-        err.original?.code === "ER_DUP_KEYNAME" ||
-        err.message?.includes("already exists") ||
-        err.message?.includes("Duplicate key name")
-      ) {
-        // Constraint already exists
-      } else {
-        throw err;
-      }
-    }
+    await queryInterface.sequelize.query(`
+      ALTER TABLE "users"
+      ADD CONSTRAINT "uq_users_company_email"
+      UNIQUE ("company_id", "email");
+    `);
   },
 
   async down(queryInterface) {
+    const exists = await queryInterface.tableExists("users");
+
+    if (!exists) {
+      console.log("users table does not exist. Skipping rollback.");
+      return;
+    }
+
     await queryInterface.dropTable("users");
   },
 };

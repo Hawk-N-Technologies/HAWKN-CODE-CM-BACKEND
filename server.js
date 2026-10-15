@@ -14,6 +14,30 @@ const employeeRoutes = require("./routes/employeeRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
 const employeeOnboardingRoutes = require("./routes/employeeOnboardingRoutes");
+const companyHolidayRoutes = require("./routes/companyHolidayRoutes");
+const employeeLeaveRoutes = require("./routes/employeeLeaveRoutes");
+const bonusRoutes = require("./routes/bonusRoutes");
+const incrementRoutes = require("./routes/incrementRoutes");
+const internshipProbationRoutes = require("./routes/internshipProbationRoutes");
+const adminHrmsRoutes = require("./routes/adminHrmsRoutes");
+const clientRoutes = require("./routes/clientRoutes");
+const projectRoutes = require("./routes/projectRoutes");
+const brdRoutes = require("./routes/brdRoutes");
+const path = require("path");
+const developerProjectRoutes = require("./routes/developerProjectRoutes");
+const operationsRoutes = require("./routes/operationsRoutes");
+const deploymentRoutes = require("./routes/deploymentRoutes");
+const clientProjectRoutes = require("./routes/clientProjectRoutes");
+const projectLeadPlanningRoutes = require("./routes/projectLeadPlanningRoutes");
+const hrDashboardRoutes = require("./routes/hrDashboardRoutes");
+const projectModuleRoutes = require("./routes/projectModuleRoutes");
+const projectPhaseRoutes = require("./routes/projectPhaseRoutes");
+const projectTaskRoutes = require("./routes/projectTaskRoutes");
+const projectLeadTechStackRoutes = require("./routes/projectLeadTechStackRoutes");
+const projectLeadTeamRoutes = require("./routes/projectLeadTeamRoutes");
+const kanbanRoutes = require("./routes/kanbanRoutes");
+const testerDashboardRoutes = require("./routes/testerDashboardRoutes");
+const taskTestingRoutes = require("./routes/taskTestingRoutes");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -46,8 +70,31 @@ app.use("/api/auth", authRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/payroll", payrollRoutes);
-
 app.use("/api/onboarding", employeeOnboardingRoutes);
+app.use("/api/company", companyHolidayRoutes);
+app.use("/api/leave", employeeLeaveRoutes);
+app.use("/api/bonuses", bonusRoutes);
+app.use("/api/increments", incrementRoutes);
+app.use("/api/internship-probation", internshipProbationRoutes);
+app.use("/api/admin/hrms", adminHrmsRoutes);
+app.use("/api/clients", clientRoutes);
+app.use("/api/admin/projects", projectRoutes);
+app.use("/api/brds", brdRoutes);
+app.use("/api/developer/projects", developerProjectRoutes);
+app.use("/api/operations", operationsRoutes);
+app.use("/api/admin/deployments", deploymentRoutes);
+app.use("/api/client/projects", clientProjectRoutes);
+app.use("/api/project-lead/planning", projectLeadPlanningRoutes);
+app.use("/api/hr/dashboard", hrDashboardRoutes);
+app.use("/api", projectTaskRoutes);
+app.use("/api/project-lead/tech-stack", projectLeadTechStackRoutes);
+app.use("/api/project-lead/team", projectLeadTeamRoutes);
+app.use("/api", projectModuleRoutes);
+app.use("/api", projectPhaseRoutes);
+app.use("/api", projectTaskRoutes);
+app.use("/api/kanban", kanbanRoutes);
+app.use("/api/tester", testerDashboardRoutes);
+app.use("/api/task-testing", taskTestingRoutes);
 
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
@@ -56,10 +103,7 @@ async function startServer() {
   try {
     await sequelize.authenticate();
 
-    console.log(
-      `✅ Database (${sequelize.dialect.name}) connected successfully`,
-    );
-
+    console.log("✅ PostgreSQL connected successfully");
     app.listen(PORT, () => {
       console.log(`🚀 Server started on port ${PORT}`);
     });

@@ -7,6 +7,7 @@ const validate = require("../middleware/validate");
 const validateQuery = require("../middleware/validateQuery");
 const {
   createPayrollSchema,
+  updatePayrollSchema,
   listPayrollQuerySchema,
   searchEmployeesQuerySchema,
   setSalarySchema,
@@ -28,10 +29,18 @@ router.get(
 );
 
 // List: ?userUuid= (optional, exact employee)
-router.get("/salaries", validateQuery(listSalariesQuerySchema), employeeSalaryController.listSalaries);
+router.get(
+  "/salaries",
+  validateQuery(listSalariesQuerySchema),
+  employeeSalaryController.listSalaries,
+);
 
 // Set / update one employee's salary
-router.put("/salaries", validate(setSalarySchema), employeeSalaryController.setSalary);
+router.put(
+  "/salaries",
+  validate(setSalarySchema),
+  employeeSalaryController.setSalary,
+);
 
 // ---------- Payroll runs ----------
 
@@ -43,12 +52,33 @@ router.get(
 );
 
 // List with filters: ?startDate=&endDate=&userUuid=&status=
-router.get("/", validateQuery(listPayrollQuerySchema), payrollController.listPayroll);
+router.get(
+  "/",
+  validateQuery(listPayrollQuerySchema),
+  payrollController.listPayroll,
+);
 
 // Create (net salary is calculated by the server)
-router.post("/", validate(createPayrollSchema), payrollController.createPayroll);
+router.post(
+  "/",
+  validate(createPayrollSchema),
+  payrollController.createPayroll,
+);
+
+// Edit a Pending payroll (amounts + payment method only)
+router.put("/:uuid", validate(updatePayrollSchema), payrollController.updatePayroll);
+
+// Delete a Pending payroll
+router.delete("/:uuid", payrollController.deletePayroll);
+
+// Edit a Pending payroll (amounts + payment method only)
+router.put("/:uuid", validate(updatePayrollSchema), payrollController.updatePayroll);
+
+// Delete a Pending payroll
+router.delete("/:uuid", payrollController.deletePayroll);
 
 // Pending → Processed (locks the record)
 router.patch("/:uuid/process", payrollController.processPayroll);
+router.post("/calculate", employeeSalaryController.getPayrollCalculation);
 
 module.exports = router;
