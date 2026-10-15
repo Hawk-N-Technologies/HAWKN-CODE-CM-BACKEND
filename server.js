@@ -46,7 +46,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "http://frontend-codefrontendtemp-weigty-ed3f48-194-164-148-10.sslip.io",
+      "https://clientportal.hawkntechnologies.com",
     ],
   }),
 );
