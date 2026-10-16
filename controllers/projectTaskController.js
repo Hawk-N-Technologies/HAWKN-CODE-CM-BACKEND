@@ -114,7 +114,9 @@ const updateTask = async (req, res) => {
       data,
     });
   } catch (error) {
-    return res.status(getErrorStatus(error)).json({
+    const statusCode = getErrorStatus(error);
+
+    return res.status(statusCode).json({
       message: error.message || "Failed to update task",
     });
   }
