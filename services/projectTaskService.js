@@ -449,6 +449,28 @@ const updateTask = async (uuid, body) => {
     const task = await getTaskByUuid(uuid, { transaction });
     const values = buildTaskValues(body);
 
+    const previousStatus = task.status;
+
+    const nextStatus = hasOwn(values, "status")
+      ? values.status
+      : previousStatus;
+
+    if (previousStatus === "Done") {
+      throw new Error(
+        "This task is already Done and cannot be changed or reverted",
+      );
+    }
+
+    if (
+      previousStatus === "Testing" &&
+      hasOwn(values, "status") &&
+      nextStatus !== previousStatus
+    ) {
+      throw new Error(
+        "Only the assigned tester can change a task's status from Testing",
+      );
+    }
+
     validateTaskValues({
       title: values.title,
       priority: values.priority,
@@ -500,11 +522,6 @@ const updateTask = async (uuid, body) => {
     if (values.isBlocked === false && !hasOwn(values, "blockedReason")) {
       values.blockedReason = null;
     }
-
-    const previousStatus = task.status;
-    const nextStatus = hasOwn(values, "status")
-      ? values.status
-      : previousStatus;
 
     if (nextStatus === "Done" && previousStatus !== "Done") {
       values.completedAt = new Date();

@@ -8,7 +8,8 @@ const TaskTesting = require("../models/TaskTesting");
 const ProjectOperation = require("../models/ProjectOperation");
 const sequelize = require("../config/db");
 const User = require("../models/User");
-
+const TaskTester = require("../models/TaskTester");
+const middleware = require("../middleware/requireProjectLead");
 const TASK_STATUSES = [
   "Backlog",
   "To Do",
@@ -19,8 +20,8 @@ const TASK_STATUSES = [
 ];
 
 const TEST_STATUSES = ["Pending", "In Progress", "Passed", "Failed"];
-const EDITOR_ROLES = ["admin", "project_lead"];
-const ALL_BOARD_ROLES = ["admin", "project_lead", "developer", "tester"];
+const EDITOR_ROLES = ["admin", "developer"];
+const ALL_BOARD_ROLES = ["admin", "developer", "tester"];
 
 function httpError(message, statusCode = 400) {
   const error = new Error(message);
@@ -159,18 +160,39 @@ async function getBoard(companyId, projectUuid) {
     const tasks = await ProjectTask.findAll({
       where: { projectId: project.id },
       include: [
-        { model: ProjectModule, as: "module", required: false },
-        { model: ProjectPhase, as: "phase", required: false },
+        {
+          model: ProjectModule,
+          as: "module",
+          required: false,
+        },
+        {
+          model: ProjectPhase,
+          as: "phase",
+          required: false,
+        },
         {
           model: TaskTesting,
           as: "testingRecords",
           required: false,
           include: [
             {
-              model: Employee,
-              as: "tester",
+              model: TaskTester,
+              as: "testerAssignment",
               required: false,
-              include: [{ model: User, as: "user", required: false }],
+              include: [
+                {
+                  model: Employee,
+                  as: "tester",
+                  required: false,
+                  include: [
+                    {
+                      model: User,
+                      as: "user",
+                      required: false,
+                    },
+                  ],
+                },
+              ],
             },
           ],
         },
@@ -333,7 +355,6 @@ async function resolveTester(companyId, testerUuid, projectId, transaction) {
     throw error;
   }
 }
-
 async function updateTaskStatus(
   companyId,
   taskUuid,
@@ -341,109 +362,167 @@ async function updateTaskStatus(
   actor,
   testerUuid,
 ) {
-  try {
-    if (!TASK_STATUSES.includes(nextStatus)) {
+  if (!TASK_STATUSES.includes(nextStatus)) {
+    throw httpError(
+      `Invalid status. Allowed statuses: ${TASK_STATUSES.join(", ")}`,
+      400,
+    );
+  }
+
+  const role = normalizeRole(actor);
+
+  if (!ALL_BOARD_ROLES.includes(role)) {
+    throw httpError("You are not allowed to update tasks", 403);
+  }
+
+  return sequelize.transaction(async (transaction) => {
+    const task = await findTaskInCompany(companyId, taskUuid, transaction);
+
+    const currentStatus = task.status;
+
+    // Done is a permanent terminal status.
+    if (currentStatus === "Done") {
+      throw httpError("Completed tasks cannot be changed or reverted", 409);
+    }
+
+    if (currentStatus === nextStatus) {
+      throw httpError("Task is already in that status", 409);
+    }
+
+    const isLead = await middleware.checkProjectLead(
+      actor.userId,
+      companyId,
+      task.projectId,
+    );
+
+    // Forward transitions allowed for developers.
+    const forwardTransitions = {
+      Backlog: ["To Do"],
+      "To Do": ["In Progress"],
+      "In Progress": ["Code Review"],
+      "Code Review": ["Testing"],
+      Testing: ["Done"],
+    };
+
+    // Reverting to any earlier workflow stage is allowed,
+    // except from Done, which is permanently locked.
+    const workflow = [
+      "Backlog",
+      "To Do",
+      "In Progress",
+      "Code Review",
+      "Testing",
+      "Done",
+    ];
+
+    const currentIndex = workflow.indexOf(currentStatus);
+    const nextIndex = workflow.indexOf(nextStatus);
+
+    if (currentIndex === -1 || nextIndex === -1) {
+      throw httpError("Invalid task workflow status", 400);
+    }
+
+    const isRevert = nextIndex < currentIndex;
+    const isForward = forwardTransitions[currentStatus]?.includes(nextStatus);
+
+    if (!isRevert && !isForward) {
       throw httpError(
-        `Invalid status. Allowed statuses: ${TASK_STATUSES.join(", ")}`,
-        400,
+        `Transition from "${currentStatus}" to "${nextStatus}" is not allowed`,
+        409,
       );
     }
 
-    const role = normalizeRole(actor);
-
-    if (!ALL_BOARD_ROLES.includes(role)) {
-      throw httpError("You are not allowed to update tasks", 403);
-    }
-
-    return await sequelize.transaction(async (transaction) => {
-      const task = await findTaskInCompany(companyId, taskUuid, transaction);
-
-      const currentStatus = task.status;
-
-      if (currentStatus === nextStatus) {
-        throw httpError("Task is already in that status", 409);
-      }
-
-      if (
-        ["Testing", "Done"].includes(currentStatus) ||
-        nextStatus === "Done"
-      ) {
+    // Reverts are allowed only to authorized board users.
+    // Restrict them to leads/admins if your policy requires it.
+    if (isRevert) {
+      if (!isLead && !EDITOR_ROLES.includes(role)) {
         throw httpError(
-          "Testing results control transitions out of Testing; a task can become Done only after passing",
-          409,
-        );
-      }
-
-      const transitions = {
-        Backlog: ["To Do"],
-        "To Do": ["In Progress"],
-        "In Progress": ["Code Review"],
-        "Code Review": ["Testing"],
-      };
-
-      if (!transitions[currentStatus]?.includes(nextStatus)) {
-        throw httpError(
-          `Transition from "${currentStatus}" to "${nextStatus}" is not allowed`,
-          409,
-        );
-      }
-
-      if (nextStatus === "To Do" && !EDITOR_ROLES.includes(role)) {
-        throw httpError(
-          "Only a project lead or admin can move a task to To Do",
+          "Only authorized project members can revert tasks",
           403,
         );
       }
-
-      if (currentStatus === "Code Review" && !EDITOR_ROLES.includes(role)) {
-        throw httpError(
-          "Only a project lead or admin can send a task to Testing",
-          403,
-        );
-      }
-
-      if (currentStatus === "To Do" || currentStatus === "In Progress") {
-        if (!EDITOR_ROLES.includes(role)) {
-          await ensureDeveloperOwnsTask(actor, task);
+    } else {
+      // Only a lead can move a task from Code Review to Testing.
+      if (currentStatus === "Code Review" && nextStatus === "Testing") {
+        if (!isLead) {
+          throw httpError(
+            "Only a project lead can send a task to Testing",
+            403,
+          );
         }
       }
 
-      if (nextStatus === "Testing") {
-        const tester = await resolveTester(
-          companyId,
-          testerUuid,
-          task.projectId,
-          transaction,
-        );
-
-        await TaskTesting.create(
-          {
-            projectId: task.projectId,
+      // Only the assigned tester can complete a task.
+      if (currentStatus === "Testing" && nextStatus === "Done") {
+        const testing = await TaskTesting.findOne({
+          where: {
             taskId: task.id,
-            testerId: tester.id,
-            status: "Pending",
+            status: "Passed",
           },
-          { transaction },
-        );
+          order: [["createdAt", "DESC"]],
+          transaction,
+        });
+
+        if (!testing) {
+          throw httpError(
+            "A task can be completed only after passing testing",
+            409,
+          );
+        }
+
+        if (String(testing.testerId) !== String(actor.userId)) {
+          throw httpError(
+            "Only the assigned tester can mark a task as Done",
+            403,
+          );
+        }
       }
 
-      await task.update(
+      // Developers must own tasks they work on, unless their
+      // role grants broader editing permissions.
+      if (
+        ["To Do", "In Progress"].includes(currentStatus) &&
+        !EDITOR_ROLES.includes(role)
+      ) {
+        await ensureDeveloperOwnsTask(actor, task);
+      }
+    }
+
+    // Create a testing record when entering Testing.
+    if (nextStatus === "Testing") {
+      const tester = await resolveTester(
+        companyId,
+        testerUuid,
+        task.projectId,
+        transaction,
+      );
+
+      await TaskTesting.create(
         {
-          status: nextStatus,
-          ...(nextStatus === "In Progress" ? { completedAt: null } : {}),
+          projectId: task.projectId,
+          taskId: task.id,
+          testerId: tester.id,
+          status: "Pending",
         },
         { transaction },
       );
+    }
 
-      return {
-        taskUuid: task.uuid,
-        previousStatus: currentStatus,
+    await task.update(
+      {
         status: nextStatus,
-      };
-    });
-  } catch (error) {
-    throw error;
-  }
+        ...(nextStatus !== "Done" ? { completedAt: null } : {}),
+        ...(nextStatus === "Done" ? { completedAt: new Date() } : {}),
+      },
+      { transaction },
+    );
+
+    return {
+      taskUuid: task.uuid,
+      previousStatus: currentStatus,
+      status: nextStatus,
+    };
+  });
 }
 
 async function updateTestingResult(
