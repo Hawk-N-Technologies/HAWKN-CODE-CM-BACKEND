@@ -2,13 +2,23 @@ const Joi = require("joi");
 
 // Must match the CHECK constraints on the projects table (database.sql)
 const TIERS = ["Tier I", "Tier II", "Tier III"];
-const STATUSES = ["Planning", "In Development", "Testing", "Completed", "On Hold", "Cancelled"];
+const STATUSES = [
+  "Planning",
+  "In Development",
+  "Testing",
+  "Completed",
+  "On Hold",
+  "Cancelled",
+];
 
 const optionalDate = (label) =>
-  Joi.date().iso().allow(null, "").messages({
-    "date.base": `${label} must be a valid date`,
-    "date.format": `${label} must be YYYY-MM-DD`,
-  });
+  Joi.date()
+    .iso()
+    .allow(null, "")
+    .messages({
+      "date.base": `${label} must be a valid date`,
+      "date.format": `${label} must be YYYY-MM-DD`,
+    });
 
 // Create + edit use the same body (edit sends every field again)
 const projectSchema = Joi.object({
