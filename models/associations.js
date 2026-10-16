@@ -29,6 +29,7 @@ const ProjectPhase = require("./ProjectPhase");
 const ProjectModule = require("./ProjectModule");
 const TaskTesting = require("./TaskTesting");
 const TaskTester = require("./TaskTester");
+const ProjectBug = require("./ProjectBug");
 
 /*
 |--------------------------------------------------------------------------
@@ -712,6 +713,71 @@ TaskTesting.belongsTo(TaskTester, {
   foreignKey: "testTaskTesterId",
   as: "testerAssignment",
 });
+
+/*
+|--------------------------------------------------------------------------
+| Project - Bugs
+|--------------------------------------------------------------------------
+*/
+
+Project.hasMany(ProjectBug, {
+  foreignKey: "projectId",
+  as: "bugs",
+});
+
+ProjectBug.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+/*
+|--------------------------------------------------------------------------
+| ProjectModule - Bugs
+|--------------------------------------------------------------------------
+*/
+
+ProjectModule.hasMany(ProjectBug, {
+  foreignKey: "moduleId",
+  as: "bugs",
+});
+
+ProjectBug.belongsTo(ProjectModule, {
+  foreignKey: "moduleId",
+  as: "module",
+});
+
+/*
+|--------------------------------------------------------------------------
+| User - Reported Bugs
+|--------------------------------------------------------------------------
+*/
+
+User.hasMany(ProjectBug, {
+  foreignKey: "reportedBy",
+  as: "reportedBugs",
+});
+
+ProjectBug.belongsTo(User, {
+  foreignKey: "reportedBy",
+  as: "reporter",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Employee - Assigned Bugs
+|--------------------------------------------------------------------------
+*/
+
+Employee.hasMany(ProjectBug, {
+  foreignKey: "assignedTo",
+  as: "assignedBugs",
+});
+
+ProjectBug.belongsTo(Employee, {
+  foreignKey: "assignedTo",
+  as: "assignee",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -746,4 +812,5 @@ module.exports = {
   ProjectTaskDeveloper,
 
   TaskTesting,
+  ProjectBug,
 };

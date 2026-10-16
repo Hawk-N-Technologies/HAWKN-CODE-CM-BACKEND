@@ -38,6 +38,7 @@ const projectLeadTeamRoutes = require("./routes/projectLeadTeamRoutes");
 const kanbanRoutes = require("./routes/kanbanRoutes");
 const testerDashboardRoutes = require("./routes/testerDashboardRoutes");
 const taskTestingRoutes = require("./routes/taskTestingRoutes");
+const bugsRoutes = require("./routes/bugsRoutes");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -95,7 +96,7 @@ app.use("/api", projectTaskRoutes);
 app.use("/api/kanban", kanbanRoutes);
 app.use("/api/tester", testerDashboardRoutes);
 app.use("/api/task-testing", taskTestingRoutes);
-
+app.use("/api/bugs", bugsRoutes);
 app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 

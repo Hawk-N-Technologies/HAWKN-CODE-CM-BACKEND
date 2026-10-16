@@ -237,6 +237,33 @@ const updateMyTaskStatus = async (req, res) => {
   }
 };
 
+const taskDropdown = async (req, res) => {
+  try {
+    const { phaseId } = req.params;
+
+    const data = await projectTaskService.taskDropdown(phaseId);
+
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        message: "Tasks not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Task dropdown fetched successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error("Task dropdown error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch task dropdown.",
+    });
+  }
+};
 module.exports = {
   createTask,
   listProjectTasks,
@@ -248,4 +275,5 @@ module.exports = {
   getDevelopersAndTesters,
   getMyTasks,
   updateMyTaskStatus,
+  taskDropdown,
 };

@@ -7,7 +7,7 @@ const { requireProjectLead } = require("../middleware/requireProjectLead");
 // Get all modules for a project
 router.get(
   "/projects/:projectUuid/modules",
-  authenticate(["hr", "developer", "tester", "bde"]),
+  authenticate(["hr", "developer", "tester", "bde", "client"]),
   projectModuleController.getModulesByProject,
 );
 

@@ -118,9 +118,29 @@ const updateClient = async (req, res) => {
   }
 };
 
+async function clientProjectsDropdown(req, res) {
+  try {
+    const data = await clientService.clientProjectsDropdown(req.user.userId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Projects fetched successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error("Client projects dropdown error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch projects.",
+    });
+  }
+}
+
 module.exports = {
   createClient,
   getClients,
   getClientById,
   updateClient,
+  clientProjectsDropdown,
 };
