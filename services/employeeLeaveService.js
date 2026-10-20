@@ -2,6 +2,8 @@ const Employee = require("../models/Employee");
 const EmployeeLeave = require("../models/EmployeeLeave");
 const { Op } = require("@sequelize/core");
 const User = require("../models/User");
+const notificationService = require("./notificationService");
+
 async function getLeaveRequests(companyId, status) {
   try {
     if (!companyId) {
@@ -51,6 +53,7 @@ async function getLeaveRequests(companyId, status) {
     throw error;
   }
 }
+
 async function updateLeaveRequest(companyId, uuid, data) {
   try {
     if (!companyId) {
@@ -73,7 +76,6 @@ async function updateLeaveRequest(companyId, uuid, data) {
 
     const { leaveType, leaveDate, leaveSession, isPaid, status } = data;
 
-    // Validate status
     const validStatuses = ["PENDING", "APPROVED", "REJECTED"];
 
     if (status !== undefined && !validStatuses.includes(status)) {
@@ -95,14 +97,13 @@ async function updateLeaveRequest(companyId, uuid, data) {
       throw error;
     }
 
-    // Only pending requests can be edited
+    // Only pending requests can be edited.
     if (leave.leaveStatus !== "PENDING") {
       const error = new Error("Only pending leave requests can be edited.");
       error.statusCode = 400;
       throw error;
     }
 
-    // Validate leave type
     const validLeaveTypes = ["CASUAL", "SICK", "ANNUAL", "UNPAID", "OTHER"];
 
     if (leaveType !== undefined && !validLeaveTypes.includes(leaveType)) {
@@ -111,7 +112,6 @@ async function updateLeaveRequest(companyId, uuid, data) {
       throw error;
     }
 
-    // Validate session
     const validSessions = ["FULL_DAY", "FIRST_HALF", "SECOND_HALF"];
 
     if (leaveSession !== undefined && !validSessions.includes(leaveSession)) {
@@ -120,7 +120,6 @@ async function updateLeaveRequest(companyId, uuid, data) {
       throw error;
     }
 
-    // Validate date
     if (leaveDate !== undefined) {
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -139,27 +138,57 @@ async function updateLeaveRequest(companyId, uuid, data) {
       }
     }
 
+    const previousStatus = leave.leaveStatus;
+
     await leave.update({
-      ...(leaveType !== undefined && {
-        leaveType,
-      }),
-
-      ...(leaveDate !== undefined && {
-        leaveDate,
-      }),
-
-      ...(leaveSession !== undefined && {
-        leaveSession,
-      }),
-
-      ...(isPaid !== undefined && {
-        isPaid,
-      }),
-
-      ...(status !== undefined && {
-        leaveStatus: status,
+      ...(leaveType !== undefined && { leaveType }),
+      ...(leaveDate !== undefined && { leaveDate }),
+      ...(leaveSession !== undefined && { leaveSession }),
+      ...(isPaid !== undefined && { isPaid }),
+      ...(status !== undefined && { leaveStatus: status }),
+      ...(status !== undefined && status !== "PENDING" && {
+        reviewedAt: new Date(),
       }),
     });
+
+    // Notify the employee when HR makes a final decision.
+    if (
+      status !== undefined &&
+      status !== previousStatus &&
+      ["APPROVED", "REJECTED"].includes(status)
+    ) {
+      try {
+        const employee = await Employee.findOne({
+          where: { id: leave.employeeId, companyId },
+          attributes: ["userId"],
+        });
+
+        if (employee?.userId) {
+          await notificationService.notifyUser({
+            companyId,
+            userId: employee.userId,
+            type: `LEAVE_${status}`,
+            title: status === "APPROVED"
+              ? "Leave request approved"
+              : "Leave request rejected",
+            message: `Your ${leave.leaveType.toLowerCase()} leave request for ${leave.leaveDate} was ${status.toLowerCase()}.`,
+            link: null,
+            eventKey: `leave-${leave.uuid}-${status.toLowerCase()}`,
+            metadata: {
+              leaveUuid: leave.uuid,
+              leaveDate: leave.leaveDate,
+              status,
+            },
+          });
+        }
+      } catch (notificationError) {
+        // Do not roll back a valid HR decision because a notification failed.
+        console.error(
+          "Failed to notify employee about leave decision:",
+          notificationError,
+        );
+      }
+    }
 
     return leave;
   } catch (error) {
@@ -177,7 +206,8 @@ const createLeaveRequest = async ({
   reason,
 }) => {
   console.log(leaveDate);
-  // Check employee
+
+  // Check employee.
   const employee = await Employee.findOne({
     where: {
       userId,
@@ -189,7 +219,7 @@ const createLeaveRequest = async ({
     throw new Error("Employee not found");
   }
 
-  // Check existing leave
+  // Check existing leave.
   const existingLeaves = await EmployeeLeave.findAll({
     where: {
       employee_id: employee.id,
@@ -200,18 +230,19 @@ const createLeaveRequest = async ({
   });
 
   for (const leave of existingLeaves) {
-    // Full day conflicts with everything
+    // Full day conflicts with everything.
     if (leave.leave_session === "FULL_DAY" || leaveSession === "FULL_DAY") {
       throw new Error("Leave already exists for this date");
     }
 
-    // Same half-day conflicts
+    // Same half-day conflicts.
     if (leave.leave_session === leaveSession) {
       throw new Error(`Leave already exists for ${leaveSession}`);
     }
 
-    // FIRST_HALF + SECOND_HALF is allowed
+    // FIRST_HALF + SECOND_HALF is allowed.
   }
+
   console.log(employee, companyId);
 
   const leave = await EmployeeLeave.create({
@@ -225,14 +256,43 @@ const createLeaveRequest = async ({
     reason: reason || null,
   });
 
+  // Notify HR after the leave request is successfully saved.
+  try {
+    const applicant = await User.findOne({
+      where: { id: userId, companyId },
+      attributes: ["firstName", "lastName"],
+    });
+
+    const applicantName = [applicant?.firstName, applicant?.lastName]
+      .filter(Boolean)
+      .join(" ") || "An employee";
+
+    await notificationService.notifyHR({
+      companyId,
+      type: "LEAVE_REQUEST_SUBMITTED",
+      title: "New leave request",
+      message: `${applicantName} submitted a ${String(leaveType).toLowerCase()} leave request for ${leaveDate}.`,
+      link: "/hr/leave",
+      eventKey: `leave-${leave.uuid}-submitted`,
+      metadata: {
+        leaveUuid: leave.uuid,
+        employeeUserId: userId,
+        leaveDate,
+        leaveType,
+        leaveSession,
+      },
+    });
+  } catch (notificationError) {
+    // A notification outage must not make a successfully created leave appear to fail.
+    console.error(
+      "Failed to notify HR about leave request:",
+      notificationError,
+    );
+  }
+
   return leave;
 };
 
-/////
-
-////
-///
-////
 const getMyLeaves = async ({ userId, companyId, tab }) => {
   const employee = await Employee.findOne({
     where: {
@@ -246,7 +306,7 @@ const getMyLeaves = async ({ userId, companyId, tab }) => {
     throw new Error("Employee not found.");
   }
 
-  // YYYY-MM-DD
+  // YYYY-MM-DD.
   const today = new Date();
 
   const year = today.getFullYear();
@@ -263,9 +323,7 @@ const getMyLeaves = async ({ userId, companyId, tab }) => {
   if (tab === "PENDING") {
     where = {
       ...where,
-
       leaveStatus: "PENDING",
-
       leaveDate: {
         [Op.gte]: todayDate,
       },
@@ -273,22 +331,15 @@ const getMyLeaves = async ({ userId, companyId, tab }) => {
   } else if (tab === "HISTORY") {
     where = {
       ...where,
-
       [Op.or]: [
-        // All approved
         {
           leaveStatus: "APPROVED",
         },
-
-        // All rejected
         {
           leaveStatus: "REJECTED",
         },
-
-        // Pending leave whose date has passed
         {
           leaveStatus: "PENDING",
-
           leaveDate: {
             [Op.lt]: todayDate,
           },
