@@ -752,15 +752,14 @@ ProjectBug.belongsTo(ProjectModule, {
 |--------------------------------------------------------------------------
 */
 
-User.hasMany(ProjectBug, {
-  foreignKey: "reportedBy",
-  as: "reportedBugs",
-});
 
-ProjectBug.belongsTo(User, {
-  foreignKey: "reportedBy",
-  as: "reporter",
-});
+
+
+
+
+
+
+
 
 /*
 |--------------------------------------------------------------------------
@@ -773,10 +772,7 @@ Employee.hasMany(ProjectBug, {
   as: "assignedBugs",
 });
 
-ProjectBug.belongsTo(Employee, {
-  foreignKey: "assignedTo",
-  as: "assignee",
-});
+
 
 module.exports = {
   Company,

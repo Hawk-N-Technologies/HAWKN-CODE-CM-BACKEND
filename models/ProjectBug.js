@@ -1,5 +1,3 @@
-"use strict";
-
 const { DataTypes } = require("@sequelize/core");
 const sequelize = require("../config/db");
 
@@ -17,6 +15,13 @@ const ProjectBug = sequelize.define(
       allowNull: false,
       unique: true,
       defaultValue: DataTypes.UUIDV4,
+    },
+
+    issueReportId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      unique: true,
+      field: "issue_report_id",
     },
 
     projectId: {
@@ -89,12 +94,6 @@ const ProjectBug = sequelize.define(
       },
     },
 
-    reportedBy: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      field: "reported_by",
-    },
-
     assignedTo: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -134,31 +133,7 @@ const ProjectBug = sequelize.define(
   {
     tableName: "project_bugs",
     timestamps: true,
-    createdAt: "createdAt",
-    updatedAt: "updatedAt",
     underscored: true,
-    indexes: [
-      {
-        name: "idx_project_bugs_project",
-        fields: ["project_id"],
-      },
-      {
-        name: "idx_project_bugs_module",
-        fields: ["module_id"],
-      },
-      {
-        name: "idx_project_bugs_status",
-        fields: ["status"],
-      },
-      {
-        name: "idx_project_bugs_assigned_to",
-        fields: ["assigned_to"],
-      },
-      {
-        name: "idx_project_bugs_reported_by",
-        fields: ["reported_by"],
-      },
-    ],
   },
 );
 

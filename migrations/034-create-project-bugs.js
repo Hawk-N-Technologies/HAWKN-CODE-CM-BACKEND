@@ -24,6 +24,18 @@ module.exports = {
         defaultValue: Sequelize.literal("gen_random_uuid()"),
       },
 
+      issue_report_id: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        unique: true,
+        references: {
+          table: "issue_reports",
+          field: "id",
+        },
+        onDelete: "SET NULL",
+        onUpdate: "CASCADE",
+      },
+
       project_id: {
         type: Sequelize.INTEGER,
         allowNull: false,
@@ -74,7 +86,7 @@ module.exports = {
         defaultValue: "Client",
       },
 
-      reported_by: {
+      assigned_to: {
         type: Sequelize.INTEGER,
         allowNull: true,
         references: {
@@ -85,22 +97,11 @@ module.exports = {
         onUpdate: "CASCADE",
       },
 
-      assigned_to: {
-        type: Sequelize.INTEGER,
-        allowNull: true,
-        references: {
-          table: "employees",
-          field: "id",
-        },
-        onDelete: "SET NULL",
-        onUpdate: "CASCADE",
-      },
-
       fixed_by: {
         type: Sequelize.INTEGER,
         allowNull: true,
         references: {
-          table: "employees",
+          table: "users",
           field: "id",
         },
         onDelete: "SET NULL",
@@ -121,7 +122,7 @@ module.exports = {
         type: Sequelize.INTEGER,
         allowNull: true,
         references: {
-          table: "employees",
+          table: "users",
           field: "id",
         },
         onDelete: "SET NULL",
@@ -146,62 +147,75 @@ module.exports = {
       },
     });
 
-    // Add CHECK constraints to match the PostgreSQL schema.
+    // Severity CHECK constraint
+    await queryInterface.addConstraint("project_bugs", {
+      fields: ["severity"],
+      type: "check",
+      where: {
+        severity: ["Low", "Medium", "High", "Critical"],
+      },
+      name: "chk_project_bugs_severity",
+    });
 
-    await queryInterface.sequelize.query(`
-      ALTER TABLE project_bugs
-      ADD CONSTRAINT chk_project_bugs_severity
-      CHECK (severity IN ('Low', 'Medium', 'High', 'Critical'));
-    `);
+    // Status CHECK constraint
+    await queryInterface.addConstraint("project_bugs", {
+      fields: ["status"],
+      type: "check",
+      where: {
+        status: [
+          "Open",
+          "Assigned",
+          "In Progress",
+          "Fixed",
+          "Ready for Retest",
+          "Reopened",
+          "Closed",
+          "Rejected",
+        ],
+      },
+      name: "chk_project_bugs_status",
+    });
 
-    await queryInterface.sequelize.query(`
-      ALTER TABLE project_bugs
-      ADD CONSTRAINT chk_project_bugs_status
-      CHECK (status IN (
-        'Open',
-        'Assigned',
-        'In Progress',
-        'Fixed',
-        'Ready for Retest',
-        'Reopened',
-        'Closed',
-        'Rejected'
-      ));
-    `);
+    // Discovery source CHECK constraint
+    await queryInterface.addConstraint("project_bugs", {
+      fields: ["discovery_source"],
+      type: "check",
+      where: {
+        discovery_source: [
+          "Client",
+          "Testing",
+          "Development",
+          "Code Review",
+          "Production",
+          "Retesting",
+        ],
+      },
+      name: "chk_project_bugs_discovery_source",
+    });
 
-    await queryInterface.sequelize.query(`
-      ALTER TABLE project_bugs
-      ADD CONSTRAINT chk_project_bugs_discovery_source
-      CHECK (discovery_source IN (
-        'Client',
-        'Testing',
-        'Development',
-        'Code Review',
-        'Production',
-        'Retesting'
-      ));
-    `);
-
-    // Indexes
-
+    // Project index
     await queryInterface.addIndex("project_bugs", ["project_id"], {
       name: "idx_project_bugs_project",
     });
 
+    // Module index
     await queryInterface.addIndex("project_bugs", ["module_id"], {
       name: "idx_project_bugs_module",
     });
 
+    // Status index
     await queryInterface.addIndex("project_bugs", ["status"], {
       name: "idx_project_bugs_status",
     });
 
+    // Assigned employee index
     await queryInterface.addIndex("project_bugs", ["assigned_to"], {
       name: "idx_project_bugs_assigned_to",
     });
 
-    await queryInterface.addIndex("project_bugs", ["reported_by"], {
-      name: "idx_project_bugs_reported_by",
+    // Issue report index
+    await queryInterface.addIndex("project_bugs", ["issue_report_id"], {
+      name: "idx_project_bugs_issue_report",
     });
   },
 

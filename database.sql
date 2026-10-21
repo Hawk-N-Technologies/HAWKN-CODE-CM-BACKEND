@@ -914,15 +914,25 @@ CREATE INDEX idx_test_task_testers_task
     ON test_task_testers (task_id);
 
 
+
+
 CREATE TABLE project_bugs (
     id SERIAL PRIMARY KEY,
+
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+
+    issue_report_id INTEGER UNIQUE
+        REFERENCES issue_reports(id) ON DELETE SET NULL,
+
     project_id INTEGER NOT NULL
         REFERENCES projects(id) ON DELETE CASCADE,
+
     module_id INTEGER
         REFERENCES project_modules(id) ON DELETE SET NULL,
+
     title VARCHAR(255) NOT NULL,
     description TEXT,
+
     severity VARCHAR(20) NOT NULL DEFAULT 'Medium'
         CHECK (severity IN (
             'Low',
@@ -930,6 +940,7 @@ CREATE TABLE project_bugs (
             'High',
             'Critical'
         )),
+
     status VARCHAR(30) NOT NULL DEFAULT 'Open'
         CHECK (status IN (
             'Open',
@@ -941,6 +952,7 @@ CREATE TABLE project_bugs (
             'Closed',
             'Rejected'
         )),
+
     discovery_source VARCHAR(30) NOT NULL DEFAULT 'Client'
         CHECK (discovery_source IN (
             'Client',
@@ -950,42 +962,53 @@ CREATE TABLE project_bugs (
             'Production',
             'Retesting'
         )),
-    reported_by INTEGER
-        REFERENCES users(id) ON DELETE SET NULL,
+
     assigned_to INTEGER
-        REFERENCES employees(id) ON DELETE SET NULL,
+        REFERENCES users(id) ON DELETE SET NULL,
+
     fixed_by INTEGER
-        REFERENCES employees(id) ON DELETE SET NULL,
+        REFERENCES users(id) ON DELETE SET NULL,
+
     fix_notes TEXT,
     fixed_at TIMESTAMPTZ,
+
     verified_by INTEGER
-        REFERENCES employees(id) ON DELETE SET NULL,
+        REFERENCES users(id) ON DELETE SET NULL,
+
     verified_at TIMESTAMPTZ,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE INDEX idx_project_bugs_project
     ON project_bugs(project_id);
+
 CREATE INDEX idx_project_bugs_module
     ON project_bugs(module_id);
+
 CREATE INDEX idx_project_bugs_status
     ON project_bugs(status);
+
 CREATE INDEX idx_project_bugs_assigned_to
     ON project_bugs(assigned_to);
-CREATE INDEX idx_project_bugs_reported_by
-    ON project_bugs(reported_by);
 
-
+CREATE INDEX idx_project_bugs_issue_report
+    ON project_bugs(issue_report_id);
 
 CREATE TABLE bug_testing (
     id SERIAL PRIMARY KEY,
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+
     bug_id INTEGER NOT NULL
         REFERENCES project_bugs(id) ON DELETE CASCADE,
-    tester_id INTEGER
-        REFERENCES employees(id) ON DELETE SET NULL,
+
     attempt_number INTEGER NOT NULL DEFAULT 1
         CHECK (attempt_number > 0),
+
     status VARCHAR(20) NOT NULL DEFAULT 'Pending'
         CHECK (status IN (
             'Pending',
@@ -993,14 +1016,75 @@ CREATE TABLE bug_testing (
             'Passed',
             'Failed'
         )),
+
     test_notes TEXT,
     tested_at TIMESTAMPTZ,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT uq_bug_testing_attempt
         UNIQUE (bug_id, attempt_number)
 );
+
+CREATE INDEX idx_bug_testing_project
+    ON bug_testing(project_id);
+
 CREATE INDEX idx_bug_testing_bug
     ON bug_testing(bug_id);
-CREATE INDEX idx_bug_testing_tester_status
-    ON bug_testing(tester_id, status);
+
+CREATE INDEX idx_bug_testing_status
+    ON bug_testing(status);
+
+
+
+
+
+
+CREATE TABLE issue_reports (
+    id SERIAL PRIMARY KEY,
+    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    project_id INTEGER NOT NULL
+        REFERENCES projects(id) ON DELETE CASCADE,
+    module_id INTEGER
+        REFERENCES project_modules(id) ON DELETE SET NULL,
+    reported_by INTEGER
+        REFERENCES users(id) ON DELETE SET NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    severity VARCHAR(20) NOT NULL DEFAULT 'Medium'
+        CHECK (severity IN (
+            'Low',
+            'Medium',
+            'High',
+            'Critical'
+        )),
+        status VARCHAR(30) NOT NULL DEFAULT 'Submitted'
+            CHECK (status IN (
+                'Submitted',
+                'Under Review',
+                'Confirmed',
+                'Feature Request',
+                'Rejected'
+            )),
+        classification VARCHAR(20)
+            CHECK (classification IN (
+                'Bug',
+                'Feature Request'
+            )),
+    reviewed_by INTEGER
+        REFERENCES users(id) ON DELETE SET NULL,
+    review_notes TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_issue_reports_project
+    ON issue_reports(project_id);
+CREATE INDEX idx_issue_reports_status
+    ON issue_reports(status);
+CREATE INDEX idx_issue_reports_reported_by
+    ON issue_reports(reported_by);
+CREATE INDEX idx_issue_reports_reviewer
+    ON issue_reports(reviewed_by);
