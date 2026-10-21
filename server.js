@@ -40,6 +40,11 @@ const testerDashboardRoutes = require("./routes/testerDashboardRoutes");
 const taskTestingRoutes = require("./routes/taskTestingRoutes");
 const bugsRoutes = require("./routes/bugsRoutes");
 const developerTestingRoutes = require("./routes/developerTestingRoutes");
+const http = require("http");
+const notificationRoutes = require("./routes/notificationRoutes");
+const {
+  initializeNotificationSocket,
+} = require("./utils/notificationSocket");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -99,21 +104,25 @@ app.use("/api/tester", testerDashboardRoutes);
 app.use("/api/task-testing", taskTestingRoutes);
 app.use("/api/bugs", bugsRoutes);
 app.use("/api/developer/testing", developerTestingRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.use(errorHandler);
+
 const PORT = process.env.PORT || 3000;
+const httpServer = http.createServer(app);
+
+initializeNotificationSocket(httpServer);
 
 async function startServer() {
   try {
     await sequelize.authenticate();
 
-    console.log("✅ PostgreSQL connected successfully");
-    app.listen(PORT, () => {
-      console.log(`🚀 Server started on port ${PORT}`);
+    console.log("PostgreSQL connected successfully");
+
+    httpServer.listen(PORT, () => {
+      console.log(`Server started on port ${PORT}`);
     });
   } catch (error) {
-    console.error("❌ Database connection failed:");
-    console.error(error.message);
-
+    console.error("Database connection failed:", error.message);
     process.exit(1);
   }
 }

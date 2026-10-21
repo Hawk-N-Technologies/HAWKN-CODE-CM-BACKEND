@@ -3,6 +3,7 @@ const logger = require("../utils/logger");
 const path = require("path");
 const fs = require("fs");
 const BRDVersion = require("../models/BRDVersion");
+const notificationService = require("../services/notificationService");
 
 // Resolve the authenticated user ID consistently.
 function getAuthenticatedUserId(req) {
@@ -40,6 +41,29 @@ async function uploadBRD(req, res, next) {
       userId,
       file: req.file,
     });
+
+    try {
+  await notificationService.notifyAdmins({
+    companyId,
+    type: "BRD_SUBMITTED",
+    title: "BRD awaiting Admin review",
+    message: `${result.brd.title} has been submitted for Admin approval.`,
+    link: "/admin/brd",
+    eventKey: `brd-submitted-${result.brd.id}-${result.version.id}`,
+    metadata: {
+      brdId: result.brd.id,
+      brdTitle: result.brd.title,
+    },
+    excludeUserId: userId,
+  });
+} catch (notificationError) {
+  // Notification failure must not undo a successful BRD submission.
+  logger.error("Failed to create BRD submission notification", {
+    companyId,
+    userId,
+    error: notificationError.message,
+  });
+}
 
     return res.status(201).json({
       success: true,
