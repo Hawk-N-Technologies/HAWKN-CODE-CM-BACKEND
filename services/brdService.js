@@ -8,6 +8,7 @@ const Company = require("../models/Company");
 const sequelize = require("../config/db");
 const logger = require("../utils/logger");
 const { Op, Transaction } = require("@sequelize/core");
+const notificationService = require("./notificationService");
 
 const ADMIN_ROLE = "admin";
 async function uploadBRD({ projectUuid, companyId, userId, file }) {
@@ -572,7 +573,7 @@ const decideBRD = async ({ brdId, reviewerId, action, message }) => {
     throw error;
   }
 
-  return sequelize.transaction(
+  const result = await sequelize.transaction(
     {
       isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED,
     },
@@ -636,6 +637,45 @@ const decideBRD = async ({ brdId, reviewerId, action, message }) => {
       };
     },
   );
+
+  // Notify the BDE who originally submitted this BRD.
+  // This runs only after the Admin decision transaction commits.
+  try {
+    const brd = await BRD.findByPk(brdId, {
+      attributes: ["id", "uuid", "title", "createdBy", "companyId"],
+    });
+
+    if (brd?.createdBy) {
+      const approved = action === "APPROVED";
+
+      await notificationService.notifyUser({
+        companyId: brd.companyId,
+        userId: brd.createdBy,
+        type: approved ? "BRD_ADMIN_APPROVED" : "BRD_ADMIN_REJECTED",
+        title: approved
+          ? "BRD approved by Admin"
+          : "BRD rejected by Admin",
+        message: approved
+          ? `${brd.title} passed Admin review and is awaiting Client approval.`
+          : `${brd.title} was rejected by Admin. Reason: ${message.trim()}`,
+        link: "/bd/brd",
+        eventKey: `brd-${brd.uuid}-admin-${action.toLowerCase()}`,
+        metadata: {
+          brdUuid: brd.uuid,
+          status: result.status,
+          action,
+        },
+      });
+    }
+  } catch (notificationError) {
+    // A notification failure must not undo a successful BRD decision.
+    logger.error("Failed to notify BDE about Admin BRD decision", {
+      brdId,
+      error: notificationError.message,
+    });
+  }
+
+  return result;
 };
 
 const getClientBRDIncludes = () => [
@@ -781,7 +821,7 @@ async function decideClientBRD({ brdId, userId, action, message }) {
     throw createServiceError("A rejection reason is required.", 400);
   }
 
-  return sequelize.transaction(async (transaction) => {
+  const result = await sequelize.transaction(async (transaction) => {
     const client = await getClientForUser(userId, transaction);
 
     const brd = await BRD.findOne({
@@ -846,6 +886,44 @@ async function decideClientBRD({ brdId, userId, action, message }) {
       review,
     };
   });
+
+  // Notify the original BDE after the Client decision commits.
+  try {
+    const brd = await BRD.findByPk(brdId, {
+      attributes: ["id", "uuid", "title", "createdBy", "companyId"],
+    });
+
+    if (brd?.createdBy) {
+      const approved = action === "APPROVED";
+
+      await notificationService.notifyUser({
+        companyId: brd.companyId,
+        userId: brd.createdBy,
+        type: approved ? "BRD_CLIENT_APPROVED" : "BRD_CLIENT_REJECTED",
+        title: approved
+          ? "BRD approved by Client"
+          : "BRD rejected by Client",
+        message: approved
+          ? `${brd.title} was approved by the Client.`
+          : `${brd.title} was rejected by the Client. Reason: ${message.trim()}`,
+        link: "/bd/brd",
+        eventKey: `brd-${brd.uuid}-client-${action.toLowerCase()}`,
+        metadata: {
+          brdUuid: brd.uuid,
+          status: result.status,
+          action,
+        },
+      });
+    }
+  } catch (notificationError) {
+    // A notification failure must not undo a successful BRD decision.
+    logger.error("Failed to notify BDE about Client BRD decision", {
+      brdId,
+      error: notificationError.message,
+    });
+  }
+
+  return result;
 }
 
 module.exports = {

@@ -4,7 +4,7 @@ const router = express.Router();
 const authenticate = require("../middleware/authenticate");
 const controller = require("../controllers/notificationController");
 
-const notificationRoles = authenticate(["admin", "hr"]);
+const notificationRoles = authenticate(["admin", "hr", "bde"]);
 
 router.get("/", notificationRoles, controller.list);
 router.patch("/read-all", notificationRoles, controller.markAllRead);
