@@ -4,6 +4,7 @@ const Role = require("../models/Role");
 const { Op } = require("@sequelize/core");
 const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
+const { date } = require("joi");
 
 async function getAllEmployees(companyId) {
   try {
@@ -803,6 +804,14 @@ async function updatePerson(data, personId, companyId) {
       password,
       confirmPassword,
       roleUuid,
+      aadhaarLast4,
+      githubUrl,
+      linkedinUrl,
+      dateOfBirth,
+      joiningDate,
+      whatsapp,
+      phone1,
+      phone2,
       isActive,
     } = data;
 
@@ -814,7 +823,15 @@ async function updatePerson(data, personId, companyId) {
       transaction,
     });
 
-    console.log(user);
+    const emp = await Employee.findOne({
+      where: {
+        userId: user.id,
+      },
+    });
+
+    if (!emp) {
+      throw new Error("Employee record not found.");
+    }
 
     if (!user) {
       throw new Error("User not found.");
@@ -936,13 +953,65 @@ async function updatePerson(data, personId, companyId) {
       updateData.isActive = isActive;
     }
 
-    if (Object.keys(updateData).length === 0) {
-      throw new Error("No fields provided for update.");
+    const employeeUpdateData = {};
+
+    // Phone 1
+    if (phone1 !== undefined) {
+      employeeUpdateData.phone1 = phone1?.trim() || null;
     }
 
-    await user.update(updateData, {
-      transaction,
-    });
+    // Phone 2
+    if (phone2 !== undefined) {
+      employeeUpdateData.phone2 = phone2?.trim() || null;
+    }
+
+    // WhatsApp
+    if (whatsapp !== undefined) {
+      employeeUpdateData.whatsapp = whatsapp?.trim() || null;
+    }
+
+    // Date of birth
+    if (dateOfBirth !== undefined) {
+      employeeUpdateData.dateOfBirth = dateOfBirth || null;
+    }
+
+    // Joining date
+    if (joiningDate !== undefined) {
+      employeeUpdateData.joiningDate = joiningDate || null;
+    }
+
+    // GitHub URL
+    if (githubUrl !== undefined) {
+      employeeUpdateData.githubUrl = githubUrl?.trim() || null;
+    }
+
+    // LinkedIn URL
+    if (linkedinUrl !== undefined) {
+      employeeUpdateData.linkedinUrl = linkedinUrl?.trim() || null;
+    }
+
+    // Aadhaar last four digits
+    if (aadhaarLast4 !== undefined) {
+      const value = aadhaarLast4?.trim() || null;
+
+      if (value !== null && !/^\d{4}$/.test(value)) {
+        throw new Error(
+          "Aadhaar last four digits must contain exactly 4 digits.",
+        );
+      }
+
+      employeeUpdateData.aadhaarLast4 = value;
+    }
+
+    // Update User
+    if (Object.keys(updateData).length > 0) {
+      await user.update(updateData, { transaction });
+    }
+
+    // Update Employee
+    if (Object.keys(employeeUpdateData).length > 0) {
+      await emp.update(employeeUpdateData, { transaction });
+    }
 
     await transaction.commit();
 
