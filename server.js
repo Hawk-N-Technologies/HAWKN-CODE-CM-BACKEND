@@ -132,7 +132,9 @@ async function dropCompanyProfileTable() {
 
     console.log("PostgreSQL connected successfully");
 
-    await sequelize.getQueryInterface().dropTable("company_policies");
+    await sequelize
+      .getQueryInterface()
+      .dropTable("company_roles_responsibilities");
 
     console.log("company_profiles table dropped successfully");
   } catch (error) {

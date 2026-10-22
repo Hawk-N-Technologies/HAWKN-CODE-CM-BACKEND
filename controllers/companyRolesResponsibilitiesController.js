@@ -35,19 +35,25 @@ async function getRolesResponsibilities(req, res, next) {
 async function updateRolesResponsibilities(req, res, next) {
   try {
     const { uuid } = req.params;
-    const { content } = req.body;
-    console.log(content);
+    const { admin, hr, bde, client, tester, developer, projectLead } = req.body;
 
-    
     // logger.info("Update roles and responsibilities request received", {
     //   userId: req.user.id,
     //   uuid,
     // });
 
+    
+
     const data =
       await companyRolesResponsibilitiesService.updateRolesResponsibilities(
         uuid,
-        content,
+        admin,
+        hr,
+        bde,
+        client,
+        tester,
+        developer,
+        projectLead,
       );
 
     return res.status(200).json({
