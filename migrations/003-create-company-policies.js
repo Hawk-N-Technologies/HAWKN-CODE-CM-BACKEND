@@ -42,7 +42,7 @@ module.exports = {
         defaultValue: "",
       },
 
-      attendancePolicy: {
+      attendance_policy: {
         type: Sequelize.TEXT,
         allowNull: false,
         defaultValue: "",
