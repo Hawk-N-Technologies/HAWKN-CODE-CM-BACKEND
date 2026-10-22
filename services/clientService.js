@@ -4,6 +4,7 @@ const Client = require("../models/Client");
 const User = require("../models/User");
 const Role = require("../models/Role");
 const bcrypt = require("bcrypt");
+const Project = require("../models/Project");
 
 const createClient = async ({
   companyId,
@@ -251,9 +252,33 @@ const updateClient = async (
   }
 };
 
+async function clientProjectsDropdown(userId) {
+  try {
+    const client = await Client.findOne({
+      where: {
+        userId: userId,
+      },
+    });
+    console.log(client);
+    const projects = await Project.findAll({
+      where: {
+        clientId: client.id,
+      },
+      attributes: ["id", "uuid", "name"],
+    });
+
+    return projects;
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+
+
 module.exports = {
   createClient,
   getClients,
   getClientById,
   updateClient,
+  clientProjectsDropdown,
 };

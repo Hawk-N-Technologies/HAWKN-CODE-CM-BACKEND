@@ -67,4 +67,9 @@ router.patch(
   projectTaskController.updateMyTaskStatus,
 );
 
+router.get(
+  "/task-dropdown/:phaseId",
+  authenticate(["developer"]),
+  projectTaskController.taskDropdown,
+);
 module.exports = router;

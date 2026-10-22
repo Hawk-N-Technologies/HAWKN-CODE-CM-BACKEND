@@ -824,6 +824,32 @@ async function updateMyTaskStatus(taskUuid, userId, companyId, status) {
     throw error;
   }
 }
+
+async function taskDropdown(phaseId) {
+  try {
+    const phase = await ProjectPhase.findOne({
+      where: {
+        uuid: phaseId,
+      },
+    });
+    const tasks = await ProjectTask.findAll({
+      where: {
+        id: phase.id,
+      },
+      attributes: ["id", "uuid", "title"],
+      order: [["title", "ASC"]],
+    });
+
+    return tasks.map((task) => ({
+      id: task.id,
+      uuid: task.uuid,
+      name: task.title,
+    }));
+  } catch (error) {
+    console.error("Task dropdown service error:", error);
+    throw error;
+  }
+}
 module.exports = {
   createTask,
   listProjectTasks,
@@ -835,4 +861,5 @@ module.exports = {
   getDevelopersAndTesters,
   getMyTasks,
   updateMyTaskStatus,
+  taskDropdown,
 };

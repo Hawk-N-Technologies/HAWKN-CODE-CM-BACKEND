@@ -24,7 +24,6 @@ async function updateLeaveRequest(req, res, next) {
   try {
     const companyId = req.user.companyId;
     const { uuid } = req.params;
-    console.log(req.body);
     const leave = await employeeLeaveService.updateLeaveRequest(
       companyId,
       uuid,

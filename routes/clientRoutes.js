@@ -4,7 +4,12 @@ const clientController = require("../controllers/clientController");
 const authenticate = require("../middleware/authenticate");
 
 const router = express.Router();
-
+// Client projects dropdown
+router.get(
+  "/projects-dropdown",
+  authenticate(["client"]),
+  clientController.clientProjectsDropdown,
+);
 // Create client
 router.post("/", authenticate(["admin", "bde"]), clientController.createClient);
 
