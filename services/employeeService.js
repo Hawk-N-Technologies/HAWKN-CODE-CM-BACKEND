@@ -770,6 +770,14 @@ async function createPerson(data, companyId) {
       },
     );
 
+    await Employee.create(
+      {
+        userId: user.id,
+        companyId,
+      },
+      { transaction },
+    );
+
     await transaction.commit();
 
     return {

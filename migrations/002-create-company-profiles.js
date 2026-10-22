@@ -50,7 +50,23 @@ module.exports = {
         allowNull: true,
       },
 
-      blog_content: {
+      // Blog sections
+      what_people_should_know: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+
+      why_customers_should_care: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+
+      culture_and_values: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+
+      company_story: {
         type: Sequelize.TEXT,
         allowNull: true,
       },

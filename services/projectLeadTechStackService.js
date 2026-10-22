@@ -75,11 +75,7 @@ async function listProjects(userId, companyId) {
 }
 
 async function getStack(projectUuid, userId, companyId) {
-  const plan = await findAssignedPlan(
-    projectUuid,
-    userId,
-    companyId,
-  );
+  const plan = await findAssignedPlan(projectUuid, userId, companyId);
 
   return {
     uuid: plan.project.uuid,
@@ -94,17 +90,10 @@ async function saveStack(projectUuid, userId, companyId, value) {
   const technologyStack = String(value ?? "").trim();
 
   if (technologyStack.length > 100) {
-    throw httpError(
-      400,
-      "Technology stack must be 100 characters or fewer.",
-    );
+    throw httpError(400, "Technology stack must be 100 characters or fewer.");
   }
 
-  const plan = await findAssignedPlan(
-    projectUuid,
-    userId,
-    companyId,
-  );
+  const plan = await findAssignedPlan(projectUuid, userId, companyId);
 
   await plan.update({
     technologyStack: technologyStack || null,

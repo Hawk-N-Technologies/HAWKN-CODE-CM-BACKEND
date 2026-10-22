@@ -32,7 +32,8 @@ async function updateCompanyPolicies(req, res, next) {
   try {
     const { uuid } = req.params;
 
-    const { content } = req.body;
+    const { leavePolicy, attendancePolicy, codeOfConduct, dataSecurityPolicy } =
+      req.body;
 
     logger.info("Update company policies request received", {
       userId: req.user.id,
@@ -41,7 +42,10 @@ async function updateCompanyPolicies(req, res, next) {
 
     const policies = await companyPolicyService.updateCompanyPolicies(
       uuid,
-      content,
+      leavePolicy,
+      attendancePolicy,
+      codeOfConduct,
+      dataSecurityPolicy,
     );
 
     return res.status(200).json({

@@ -52,7 +52,9 @@ function toResponse(payroll) {
           uuid: employee.uuid,
           firstName: employee.firstName,
           lastName: employee.lastName,
-          fullName: [employee.firstName, employee.lastName].filter(Boolean).join(" "),
+          fullName: [employee.firstName, employee.lastName]
+            .filter(Boolean)
+            .join(" "),
           email: employee.email,
         }
       : null,
@@ -76,7 +78,11 @@ async function findPayableUser(userUuid, companyId, transaction) {
         AND u.is_active = TRUE
         AND r.name <> 'client'
       LIMIT 1`,
-    { replacements: { userUuid, companyId }, type: QueryTypes.SELECT, transaction },
+    {
+      replacements: { userUuid, companyId },
+      type: QueryTypes.SELECT,
+      transaction,
+    },
   );
 
   return user || null;
@@ -207,7 +213,11 @@ async function listPayroll(companyId, filters = {}) {
       limit: MAX_LIST_ROWS,
     });
 
-    logger.info("Payroll list fetched", { companyId, count: rows.length, filters });
+    logger.info("Payroll list fetched", {
+      companyId,
+      count: rows.length,
+      filters,
+    });
     return rows.map(toResponse);
   } catch (error) {
     logger.error("Failed to fetch payroll", {
@@ -239,11 +249,16 @@ async function createPayroll(companyId, createdByUserId, data) {
         transaction,
       });
       if (existing) {
-        throw httpError(409, "Payroll for this employee and month already exists");
+        throw httpError(
+          409,
+          "Payroll for this employee and month already exists",
+        );
       }
 
       const netPaise =
-        toPaise(data.baseSalary) - toPaise(data.lopDeduction) + toPaise(data.bonus);
+        toPaise(data.baseSalary) -
+        toPaise(data.lopDeduction) +
+        toPaise(data.bonus);
 
       const payroll = await Payroll.create(
         {
@@ -264,12 +279,19 @@ async function createPayroll(companyId, createdByUserId, data) {
       return payroll.uuid;
     });
 
-    logger.info("Payroll created", { companyId, payrollUuid, createdBy: createdByUserId });
+    logger.info("Payroll created", {
+      companyId,
+      payrollUuid,
+      createdBy: createdByUserId,
+    });
     return getPayrollByUuid(payrollUuid, companyId);
   } catch (error) {
     // Two HR users creating the same employee+month at the same moment
     if (error instanceof UniqueConstraintError) {
-      throw httpError(409, "Payroll for this employee and month already exists");
+      throw httpError(
+        409,
+        "Payroll for this employee and month already exists",
+      );
     }
 
     logger.error("Failed to create payroll", {
@@ -297,18 +319,29 @@ async function getPayrollByUuid(uuid, companyId) {
 async function processPayroll(uuid, companyId, processedByUserId) {
   try {
     const [updatedCount] = await Payroll.update(
-      { status: "Processed", processedAt: new Date(), processedBy: processedByUserId },
+      {
+        status: "Processed",
+        processedAt: new Date(),
+        processedBy: processedByUserId,
+      },
       { where: { uuid, companyId, status: "Pending" } },
     );
 
     if (updatedCount === 0) {
       // Tell apart "doesn't exist" from "already processed"
-      const payroll = await Payroll.findOne({ where: { uuid, companyId }, attributes: ["status"] });
+      const payroll = await Payroll.findOne({
+        where: { uuid, companyId },
+        attributes: ["status"],
+      });
       if (!payroll) throw httpError(404, "Payroll record not found");
       throw httpError(409, "Payroll is already processed");
     }
 
-    logger.info("Payroll processed", { companyId, payrollUuid: uuid, processedBy: processedByUserId });
+    logger.info("Payroll processed", {
+      companyId,
+      payrollUuid: uuid,
+      processedBy: processedByUserId,
+    });
     return getPayrollByUuid(uuid, companyId);
   } catch (error) {
     logger.error("Failed to process payroll", {
@@ -328,7 +361,9 @@ async function processPayroll(uuid, companyId, processedByUserId) {
 async function updatePayroll(uuid, companyId, data) {
   try {
     const netPaise =
-      toPaise(data.baseSalary) - toPaise(data.lopDeduction) + toPaise(data.bonus);
+      toPaise(data.baseSalary) -
+      toPaise(data.lopDeduction) +
+      toPaise(data.bonus);
 
     const [updatedCount] = await Payroll.update(
       {
@@ -342,7 +377,10 @@ async function updatePayroll(uuid, companyId, data) {
     );
 
     if (updatedCount === 0) {
-      const payroll = await Payroll.findOne({ where: { uuid, companyId }, attributes: ["status"] });
+      const payroll = await Payroll.findOne({
+        where: { uuid, companyId },
+        attributes: ["status"],
+      });
       if (!payroll) throw httpError(404, "Payroll record not found");
       throw httpError(409, "Processed payroll can't be edited");
     }
@@ -370,7 +408,10 @@ async function deletePayroll(uuid, companyId) {
     });
 
     if (deletedCount === 0) {
-      const payroll = await Payroll.findOne({ where: { uuid, companyId }, attributes: ["status"] });
+      const payroll = await Payroll.findOne({
+        where: { uuid, companyId },
+        attributes: ["status"],
+      });
       if (!payroll) throw httpError(404, "Payroll record not found");
       throw httpError(409, "Processed payroll can't be deleted");
     }
@@ -392,5 +433,5 @@ module.exports = {
   createPayroll,
   processPayroll,
   updatePayroll,
-  deletePayroll
+  deletePayroll,
 };

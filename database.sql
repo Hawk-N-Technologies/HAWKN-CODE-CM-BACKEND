@@ -10,7 +10,6 @@ CREATE TABLE companies (
 INSERT INTO companies (name)
 VALUES ('Hawk''n Technologies');
 
-
 CREATE TABLE company_profiles (
     id SERIAL PRIMARY KEY,
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
@@ -19,7 +18,10 @@ CREATE TABLE company_profiles (
     official_email VARCHAR(255) NOT NULL,
     vision TEXT,
     mission TEXT,
-    blog_content TEXT,
+    what_people_should_know TEXT,
+    why_customers_should_care TEXT,
+    culture_and_values TEXT,
+    company_story TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_company_profiles_company
@@ -32,7 +34,10 @@ CREATE TABLE company_policies (
     id SERIAL PRIMARY KEY,
     uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     company_id INTEGER NOT NULL UNIQUE,
-    content TEXT NOT NULL DEFAULT '',
+    leave_policy TEXT NOT NULL DEFAULT '',
+    attendance_policy TEXT NOT NULL DEFAULT '',
+    code_of_conduct TEXT NOT NULL DEFAULT '',
+    data_security_policy TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_company_policies_company
@@ -40,6 +45,7 @@ CREATE TABLE company_policies (
         REFERENCES companies(id)
         ON DELETE CASCADE
 );
+
 
 CREATE TABLE company_roles_responsibilities (
     id SERIAL PRIMARY KEY,

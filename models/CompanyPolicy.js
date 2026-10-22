@@ -1,4 +1,6 @@
-const DataTypes  = require("@sequelize/core");
+"use strict";
+
+const DataTypes = require("@sequelize/core");
 const sequelize = require("../config/db");
 
 const CompanyPolicy = sequelize.define(
@@ -24,10 +26,32 @@ const CompanyPolicy = sequelize.define(
       field: "company_id",
     },
 
-    content: {
+    leavePolicy: {
       type: DataTypes.TEXT,
       allowNull: false,
       defaultValue: "",
+      field: "leave_policy",
+    },
+
+    attendancePolicy: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: "",
+      field: "attendance_policy",
+    },
+
+    codeOfConduct: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: "",
+      field: "code_of_conduct",
+    },
+
+    dataSecurityPolicy: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: "",
+      field: "data_security_policy",
     },
   },
   {
