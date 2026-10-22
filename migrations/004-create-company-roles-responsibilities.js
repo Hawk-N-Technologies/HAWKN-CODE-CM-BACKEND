@@ -1,13 +1,17 @@
-// migrations/004-create-company-roles-responsibilities.js
-
 "use strict";
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
-    const uuidDefault = isMysql
-      ? Sequelize.literal("(UUID())")
-      : Sequelize.literal("gen_random_uuid()");
+    const exists = await queryInterface.tableExists(
+      "company_roles_responsibilities",
+    );
+
+    if (exists) {
+      console.log(
+        "company_roles_responsibilities table already exists. Skipping migration.",
+      );
+      return;
+    }
 
     await queryInterface.createTable("company_roles_responsibilities", {
       id: {
@@ -28,17 +32,51 @@ module.exports = {
         type: Sequelize.INTEGER,
         allowNull: false,
         unique: true,
-
         references: {
           table: "companies",
           key: "id",
         },
-
         onDelete: "CASCADE",
         onUpdate: "CASCADE",
       },
 
-      content: {
+      admin: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+        defaultValue: "",
+      },
+
+      hr: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+        defaultValue: "",
+      },
+
+      tester: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+        defaultValue: "",
+      },
+
+      bde: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+        defaultValue: "",
+      },
+
+      client: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+        defaultValue: "",
+      },
+
+      developer: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+        defaultValue: "",
+      },
+
+      project_lead: {
         type: Sequelize.TEXT,
         allowNull: false,
         defaultValue: "",
@@ -56,9 +94,24 @@ module.exports = {
         defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
       },
     });
+
+    console.log("company_roles_responsibilities table created successfully.");
   },
 
   async down(queryInterface) {
+    const exists = await queryInterface.tableExists(
+      "company_roles_responsibilities",
+    );
+
+    if (!exists) {
+      console.log(
+        "company_roles_responsibilities table does not exist. Skipping rollback.",
+      );
+      return;
+    }
+
     await queryInterface.dropTable("company_roles_responsibilities");
+
+    console.log("company_roles_responsibilities table dropped successfully.");
   },
 };

@@ -9,7 +9,13 @@ const MAX_CONTENT_LENGTH = 500000;
 function toResponse(record) {
   return {
     uuid: record ? record.uuid : null,
-    content: record ? record.content : "",
+    admin: record ? record.admin : "",
+    hr: record ? record.hr : "",
+    bde: record ? record.bde : "",
+    client: record ? record.client : "",
+    developer: record ? record.developer : "",
+    tester: record ? record.tester : "",
+    projectLead: record ? record.projectLead : "",
     createdAt: record ? record.createdAt : null,
     updatedAt: record ? record.updatedAt : null,
   };
@@ -27,7 +33,18 @@ async function getRolesResponsibilities(companyId) {
       where: {
         companyId: companyId,
       },
-      attributes: ["uuid", "content", "createdAt", "updatedAt"],
+      attributes: [
+        "uuid",
+        "admin",
+        "hr",
+        "client",
+        "tester",
+        "bde",
+        "developer",
+        "projectLead",
+        "createdAt",
+        "updatedAt",
+      ],
     });
 
     // Nothing saved yet is NOT an error — the page just shows an empty editor
@@ -55,7 +72,16 @@ async function getRolesResponsibilities(companyId) {
   }
 }
 
-async function updateRolesResponsibilities(uuid, content) {
+async function updateRolesResponsibilities(
+  uuid,
+  admin,
+  hr,
+  bde,
+  client,
+  tester,
+  developer,
+  projectLead,
+) {
   try {
     if (!uuid) {
       const error = new Error("uuid is required");
@@ -63,13 +89,13 @@ async function updateRolesResponsibilities(uuid, content) {
       throw error;
     }
 
-    if (typeof content !== "string") {
+    if (typeof admin !== "string") {
       const error = new Error("Content must be a string");
       error.statusCode = 400;
       throw error;
     }
 
-    if (content.length > MAX_CONTENT_LENGTH) {
+    if (admin.length > MAX_CONTENT_LENGTH) {
       const error = new Error("Content is too long");
       error.statusCode = 400;
       throw error;
@@ -85,7 +111,13 @@ async function updateRolesResponsibilities(uuid, content) {
     if (!rolesResponsibilities) {
       rolesResponsibilities = await CompanyRolesResponsibilities.create({
         companyId: companyId,
-        content: content,
+        admin,
+        hr,
+        bde,
+        client,
+        tester,
+        developer,
+        projectLead,
       });
 
       logger.info("Roles and responsibilities created successfully", {
@@ -97,8 +129,14 @@ async function updateRolesResponsibilities(uuid, content) {
     }
 
     // Every save after that → update the same row
-    await rolesResponsibilities.update({
-      content: content,
+    const res = await rolesResponsibilities.update({
+      admin,
+      hr,
+      bde,
+      client,
+      tester,
+      developer,
+      projectLead,
     });
 
     logger.info("Roles and responsibilities updated successfully", {
