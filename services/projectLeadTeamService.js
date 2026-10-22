@@ -16,7 +16,10 @@ function httpError(statusCode, message) {
   return error;
 }
 
-const normalizeRole = (value) => String(value || "").trim().toLowerCase();
+const normalizeRole = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
 
 function employeeName(employee) {
   const user = employee?.user;
@@ -157,9 +160,7 @@ async function getTeam(projectUuid, userId, companyId) {
       projectLeads: people.filter((item) =>
         ["developer"].includes(roleOf(item)),
       ),
-      developers: people.filter((item) =>
-        ["developer"].includes(roleOf(item)),
-      ),
+      developers: people.filter((item) => ["developer"].includes(roleOf(item))),
       testers: people.filter((item) =>
         ["tester", "qa", "quality assurance"].includes(roleOf(item)),
       ),
@@ -194,109 +195,107 @@ async function saveTeam(projectUuid, userId, companyId, payload) {
   const normalizedDevelopers = [...new Set(developerIds.map(Number))];
   const normalizedTesters = [...new Set(testerIds.map(Number))];
 
-  const allIds = [
-    projectLeadId,
-    ...normalizedDevelopers,
-    ...normalizedTesters,
-  ];
+  const allIds = [projectLeadId, ...normalizedDevelopers, ...normalizedTesters];
 
   if (allIds.some((id) => !Number.isInteger(id) || id <= 0)) {
     throw httpError(400, "One or more employee IDs are invalid.");
   }
 
-  return sequelize.transaction(async (transaction) => {
-    const plan = await ProjectOperation.findOne({
-      where: { companyId, projectLeadId: employee.id },
-      include: [
-        {
-          model: Project,
-          as: "project",
-          required: true,
-          where: { uuid: projectUuid, companyId },
+  return sequelize
+    .transaction(async (transaction) => {
+      const plan = await ProjectOperation.findOne({
+        where: { companyId, projectLeadId: employee.id },
+        include: [
+          {
+            model: Project,
+            as: "project",
+            required: true,
+            where: { uuid: projectUuid, companyId },
+          },
+        ],
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+
+      if (!plan) {
+        throw httpError(
+          404,
+          "Project not found or not assigned to you as lead.",
+        );
+      }
+
+      const selectedEmployees = await Employee.findAll({
+        where: {
+          id: { [Op.in]: [...new Set(allIds)] },
+          companyId,
+          employmentStatus: "Active",
         },
-      ],
-      transaction,
-      lock: transaction.LOCK.UPDATE,
-    });
+        include: [employeeInclude],
+        transaction,
+      });
 
-    if (!plan) {
-      throw httpError(404, "Project not found or not assigned to you as lead.");
-    }
+      if (selectedEmployees.length !== new Set(allIds).size) {
+        throw httpError(
+          400,
+          "Selected employees must be active and belong to your company.",
+        );
+      }
 
-    const selectedEmployees = await Employee.findAll({
-      where: {
-        id: { [Op.in]: [...new Set(allIds)] },
-        companyId,
-        employmentStatus: "Active",
-      },
-      include: [employeeInclude],
-      transaction,
-    });
+      const byId = new Map(selectedEmployees.map((item) => [item.id, item]));
 
-    if (selectedEmployees.length !== new Set(allIds).size) {
-      throw httpError(
-        400,
-        "Selected employees must be active and belong to your company.",
-      );
-    }
+      const roleOf = (id) => normalizeRole(byId.get(id)?.user?.role?.name);
 
-    const byId = new Map(
-      selectedEmployees.map((item) => [item.id, item]),
-    );
+      if (roleOf(projectLeadId) !== "developer") {
+        throw httpError(400, "Project Lead must have the developer role.");
+      }
 
-    const roleOf = (id) =>
-      normalizeRole(byId.get(id)?.user?.role?.name);
+      if (normalizedDevelopers.some((id) => roleOf(id) !== "developer")) {
+        throw httpError(400, "Only developers can be assigned as developers.");
+      }
 
-    if (roleOf(projectLeadId) !== "developer") {
-      throw httpError(400, "Project Lead must have the developer role.");
-    }
+      if (
+        normalizedTesters.some(
+          (id) => !["tester", "qa", "quality assurance"].includes(roleOf(id)),
+        )
+      ) {
+        throw httpError(400, "Only testers or QA employees can be assigned.");
+      }
 
-    if (normalizedDevelopers.some((id) => roleOf(id) !== "developer")) {
-      throw httpError(400, "Only developers can be assigned as developers.");
-    }
+      await plan.update({ projectLeadId, updatedBy: userId }, { transaction });
 
-    if (
-      normalizedTesters.some(
-        (id) => !["tester", "qa", "quality assurance"].includes(roleOf(id)),
-      )
-    ) {
-      throw httpError(400, "Only testers or QA employees can be assigned.");
-    }
+      await ProjectOperationDeveloper.destroy({
+        where: { projectOperationId: plan.id },
+        transaction,
+      });
 
-    await plan.update({ projectLeadId, updatedBy: userId }, { transaction });
+      await ProjectOperationTester.destroy({
+        where: { projectOperationId: plan.id },
+        transaction,
+      });
 
-    await ProjectOperationDeveloper.destroy({
-      where: { projectOperationId: plan.id },
-      transaction,
-    });
+      if (normalizedDevelopers.length) {
+        await ProjectOperationDeveloper.bulkCreate(
+          normalizedDevelopers.map((employeeId) => ({
+            projectOperationId: plan.id,
+            employeeId,
+          })),
+          { transaction },
+        );
+      }
 
-    await ProjectOperationTester.destroy({
-      where: { projectOperationId: plan.id },
-      transaction,
-    });
+      if (normalizedTesters.length) {
+        await ProjectOperationTester.bulkCreate(
+          normalizedTesters.map((employeeId) => ({
+            projectOperationId: plan.id,
+            employeeId,
+          })),
+          { transaction },
+        );
+      }
 
-    if (normalizedDevelopers.length) {
-      await ProjectOperationDeveloper.bulkCreate(
-        normalizedDevelopers.map((employeeId) => ({
-          projectOperationId: plan.id,
-          employeeId,
-        })),
-        { transaction },
-      );
-    }
-
-    if (normalizedTesters.length) {
-      await ProjectOperationTester.bulkCreate(
-        normalizedTesters.map((employeeId) => ({
-          projectOperationId: plan.id,
-          employeeId,
-        })),
-        { transaction },
-      );
-    }
-
-    return { success: true };
-  }).then(() => ({ success: true }));
+      return { success: true };
+    })
+    .then(() => ({ success: true }));
 }
 
 module.exports = { getLeadProjects, getTeam, saveTeam };

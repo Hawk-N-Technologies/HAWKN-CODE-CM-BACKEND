@@ -42,9 +42,8 @@ const bugsRoutes = require("./routes/bugsRoutes");
 const developerTestingRoutes = require("./routes/developerTestingRoutes");
 const http = require("http");
 const notificationRoutes = require("./routes/notificationRoutes");
-const {
-  initializeNotificationSocket,
-} = require("./utils/notificationSocket");
+const { initializeNotificationSocket } = require("./utils/notificationSocket");
+const User = require("./models/User");
 
 require("./models/associations");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
@@ -123,6 +122,21 @@ async function startServer() {
     });
   } catch (error) {
     console.error("Database connection failed:", error.message);
+    process.exit(1);
+  }
+}
+
+async function dropCompanyProfileTable() {
+  try {
+    await sequelize.authenticate();
+
+    console.log("PostgreSQL connected successfully");
+
+    await sequelize.getQueryInterface().dropTable("company_policies");
+
+    console.log("company_profiles table dropped successfully");
+  } catch (error) {
+    console.error("Failed to drop company_profiles table:", error.message);
     process.exit(1);
   }
 }

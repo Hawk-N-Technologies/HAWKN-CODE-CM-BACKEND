@@ -19,7 +19,10 @@ async function getCompanyProfile(companyId) {
         "officialEmail",
         "vision",
         "mission",
-        "blogContent",
+        "whatPeopleShouldKnow",
+        "whyCustomersShouldCare",
+        "cultureAndValues",
+        "companyStory",
         "createdAt",
         "updatedAt",
       ],
@@ -79,10 +82,13 @@ async function updateCompanyProfile(uuid, data) {
       officialEmail: data.officialEmail,
       vision: data.vision,
       mission: data.mission,
-      blogContent: data.blogContent,
+      cultureAndValues: data.cultureAndValues,
+      whyCustomersShouldCare: data.whyCustomersShouldCare,
+      whatPeopleShouldKnow: data.whatPeopleShouldKnow,
+      companyStory: data.companyStory,
     };
 
-    console.log(allowedFields.blogContent);
+    console.log(allowedFields.companyStory);
 
     await profile.update(allowedFields);
 

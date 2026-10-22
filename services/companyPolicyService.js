@@ -13,7 +13,15 @@ async function getCompanyPolicies(companyId) {
       where: {
         companyId: companyId,
       },
-      attributes: ["uuid", "content", "createdAt", "updatedAt"],
+      attributes: [
+        "uuid",
+        "attendancePolicy",
+        "leavePolicy",
+        "codeOfConduct",
+        "dataSecurityPolicy",
+        "createdAt",
+        "updatedAt",
+      ],
     });
 
     if (!policies) {
@@ -40,7 +48,13 @@ async function getCompanyPolicies(companyId) {
   }
 }
 
-async function updateCompanyPolicies(uuid, content) {
+async function updateCompanyPolicies(
+  uuid,
+  leavePolicy,
+  attendancePolicy,
+  codeOfConduct,
+  dataSecurityPolicy,
+) {
   try {
     if (!uuid) {
       const error = new Error("uuid is required");
@@ -48,7 +62,7 @@ async function updateCompanyPolicies(uuid, content) {
       throw error;
     }
 
-    if (typeof content !== "string") {
+    if (typeof leavePolicy !== "string") {
       const error = new Error("Policy content must be a string");
       error.statusCode = 400;
       throw error;
@@ -67,7 +81,10 @@ async function updateCompanyPolicies(uuid, content) {
     }
 
     await policies.update({
-      content: content,
+      dataSecurityPolicy,
+      leavePolicy,
+      codeOfConduct,
+      attendancePolicy,
     });
 
     logger.info("Company policies updated successfully", {
@@ -76,13 +93,15 @@ async function updateCompanyPolicies(uuid, content) {
 
     return {
       uuid: policies.uuid,
-      content: policies.content,
+      attendancePolicy: policies.attendancePolicy,
+      codeOfConduct: policies.codeOfConduct,
+      leavePolicy: policies.leavePolicy,
+      dataSecurityPolicy: policies.dataSecurityPolicy,
       createdAt: policies.createdAt,
       updatedAt: policies.updatedAt,
     };
   } catch (error) {
     logger.error("Failed to update company policies", {
-      companyId: companyId,
       error: error.message,
       stack: error.stack,
     });

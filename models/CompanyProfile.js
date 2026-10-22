@@ -1,3 +1,5 @@
+"use strict";
+
 const DataTypes = require("@sequelize/core");
 const sequelize = require("../config/db");
 
@@ -49,10 +51,29 @@ const CompanyProfile = sequelize.define(
       allowNull: true,
     },
 
-    blogContent: {
+    // Blog sections
+    whatPeopleShouldKnow: {
       type: DataTypes.TEXT,
       allowNull: true,
-      field: "blog_content",
+      field: "what_people_should_know",
+    },
+
+    whyCustomersShouldCare: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "why_customers_should_care",
+    },
+
+    cultureAndValues: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "culture_and_values",
+    },
+
+    companyStory: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "company_story",
     },
   },
   {
