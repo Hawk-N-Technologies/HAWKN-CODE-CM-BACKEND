@@ -75,14 +75,23 @@ async function getOptions(req, res, next) {
 
 async function listProjects(req, res, next) {
   try {
-    const data = await projectService.listProjects(
-      req.user.companyId,
-      req.validatedQuery?.status
-        ? {
-            status: req.validatedQuery.status,
-          }
-        : {},
-    );
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      status = "",
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = req.query ?? {};
+
+    const data = await projectService.listProjects(req.user.companyId, {
+      page: Number(page),
+      limit: Number(limit),
+      search,
+      status,
+      sortBy,
+      sortOrder,
+    });
 
     return res.status(200).json({
       success: true,
@@ -93,7 +102,6 @@ async function listProjects(req, res, next) {
     return handleError(error, res, next, "Get projects failed", req);
   }
 }
-
 // --------------------------------------------------
 // Get Single Project
 // GET /api/admin/projects/:uuid

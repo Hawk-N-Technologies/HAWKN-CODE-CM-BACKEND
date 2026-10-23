@@ -472,55 +472,57 @@ async function getEmployeeIdByUserId(userId, transaction) {
   }
 }
 
-// services/employee.service.js
-
 async function getPeople(companyId, options = {}) {
   const { search = "", page = 1, limit = 10, status, role } = options;
 
-  const offset = (page - 1) * limit;
+  const currentPage = Math.max(1, Number(page) || 1);
+  const pageSize = Math.max(1, Math.min(100, Number(limit) || 10));
+  const offset = (currentPage - 1) * pageSize;
 
-  const userWhere = {
-    companyId,
-  };
+  const trimmedSearch = String(search ?? "").trim();
+  const trimmedRole = String(role ?? "").trim();
+  const receivedStatus = String(status ?? "").trim();
 
-  const trimmedSearch = search.trim();
+  // Normalize status to the exact values stored in PostgreSQL.
+  const allowedStatuses = ["Active", "On Leave", "Exited"];
+
+  const normalizedStatus = receivedStatus
+    ? allowedStatuses.find(
+        (value) => value.toLowerCase() === receivedStatus.toLowerCase(),
+      )
+    : undefined;
+
+  if (receivedStatus && !normalizedStatus) {
+    const error = new Error(
+      `Invalid status. Allowed values: ${allowedStatuses.join(", ")}`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Filter users belonging to the current company.
+  const userWhere = { companyId };
 
   if (trimmedSearch) {
     userWhere[Op.or] = [
-      {
-        firstName: {
-          [Op.iLike]: `%${trimmedSearch}%`,
-        },
-      },
-      {
-        lastName: {
-          [Op.iLike]: `%${trimmedSearch}%`,
-        },
-      },
-      {
-        email: {
-          [Op.iLike]: `%${trimmedSearch}%`,
-        },
-      },
+      { firstName: { [Op.iLike]: `%${trimmedSearch}%` } },
+      { lastName: { [Op.iLike]: `%${trimmedSearch}%` } },
+      { email: { [Op.iLike]: `%${trimmedSearch}%` } },
     ];
   }
 
+  // Always exclude clients; apply the requested role if provided.
   const roleWhere = {
-    // Admin dashboard should not show clients
     name: {
       [Op.ne]: "client",
+      ...(trimmedRole ? { [Op.eq]: trimmedRole } : {}),
     },
   };
 
-  if (role) {
-    roleWhere.name = role;
-  }
-
-  const employeeWhere = {};
-
-  if (status) {
-    employeeWhere.employmentStatus = status;
-  }
+  // Only filter employee records when a status was supplied.
+  const employeeWhere = normalizedStatus
+    ? { employmentStatus: normalizedStatus }
+    : undefined;
 
   const result = await User.findAndCountAll({
     where: userWhere,
@@ -543,19 +545,15 @@ async function getPeople(companyId, options = {}) {
         model: Role,
         as: "role",
         required: true,
-
         attributes: ["id", "uuid", "name", "description"],
-
         where: roleWhere,
       },
-
       {
         model: Employee,
         as: "employee",
 
-        // VERY IMPORTANT
-        // false = LEFT JOIN
-        required: false,
+        // A status filter requires a matching employee record.
+        required: Boolean(normalizedStatus),
 
         attributes: [
           "id",
@@ -575,45 +573,41 @@ async function getPeople(companyId, options = {}) {
           "photoUrl",
         ],
 
-        where:
-          Object.keys(employeeWhere).length > 0 ? employeeWhere : undefined,
+        where: employeeWhere,
       },
     ],
 
     order: [["createdAt", "DESC"]],
-
-    limit,
+    limit: pageSize,
     offset,
-
     distinct: true,
+    subQuery: false,
   });
 
   const rows = result.rows.map((user) => {
     const employee = user.employee;
 
     return {
-      // User information
       id: employee?.id ?? user.id,
 
       userId: user.id,
       userUuid: user.uuid,
+      companyId: user.companyId,
 
       name: [user.firstName, user.lastName].filter(Boolean).join(" "),
 
       firstName: user.firstName,
       lastName: user.lastName,
-
       email: user.email,
 
-      role: user.role?.name,
-      roleId: user.role?.id,
-      roleUuid: user.role?.uuid,
+      role: user.role?.name ?? null,
+      roleId: user.role?.id ?? null,
+      roleUuid: user.role?.uuid ?? null,
+
       userIsActive: user.isActive,
 
-      // Employee information
       employeeId: employee?.id ?? null,
       employeeUuid: employee?.uuid ?? null,
-
       companyEmail: employee?.companyEmail ?? null,
 
       phone1: employee?.phone1 ?? null,
@@ -622,36 +616,32 @@ async function getPeople(companyId, options = {}) {
 
       joiningDate: employee?.joiningDate ?? null,
       joinDate: employee?.joiningDate ?? null,
-
       dateOfBirth: employee?.dateOfBirth ?? null,
 
       linkedinUrl: employee?.linkedinUrl ?? null,
       githubUrl: employee?.githubUrl ?? null,
-
       aadhaarLast4: employee?.aadhaarLast4 ?? null,
 
       employmentType: employee?.employmentType ?? null,
-
       employmentStatus: employee?.employmentStatus ?? null,
 
       status:
         employee?.employmentStatus ?? (user.isActive ? "Active" : "Inactive"),
 
       photoUrl: employee?.photoUrl ?? null,
-
-      // Useful flag for frontend
       isEmployee: Boolean(employee),
     };
   });
 
+  const total = Number(result.count);
+
   return {
     rows,
-
     pagination: {
-      total: result.count,
-      page,
-      limit,
-      totalPages: Math.ceil(result.count / limit),
+      total,
+      page: currentPage,
+      limit: pageSize,
+      totalPages: Math.ceil(total / pageSize),
     },
   };
 }
@@ -807,6 +797,7 @@ async function updatePerson(data, personId, companyId) {
       aadhaarLast4,
       githubUrl,
       linkedinUrl,
+      companyEmail,
       dateOfBirth,
       joiningDate,
       whatsapp,
@@ -958,6 +949,30 @@ async function updatePerson(data, personId, companyId) {
     // Phone 1
     if (phone1 !== undefined) {
       employeeUpdateData.phone1 = phone1?.trim() || null;
+    }
+
+    if (companyEmail !== undefined) {
+      const normalizedEmail = companyEmail.trim();
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        throw new Error("Enter a valid email address.");
+      }
+
+      if (normalizedEmail !== emp.companyEmail) {
+        const existingUser = await Employee.findOne({
+          where: {
+            userId: user.id,
+            companyEmail: normalizedEmail,
+          },
+          transaction,
+        });
+
+        if (existingUser) {
+          throw new Error("A user with this email already exists.");
+        }
+      }
+
+      employeeUpdateData.companyEmail = normalizedEmail;
     }
 
     // Phone 2
