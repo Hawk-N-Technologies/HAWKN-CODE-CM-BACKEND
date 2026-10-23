@@ -167,7 +167,7 @@ async function getPeople(req, res) {
     const companyId = req.user.companyId;
 
     const { search, page = 1, limit = 10, status, role } = req.query;
-
+    console.log(status, role);
     const result = await employeeService.getPeople(companyId, {
       search,
       page: Number(page),

@@ -618,47 +618,136 @@ async function getOptions(companyId) {
 // Get All Projects
 // --------------------------------------------------
 
-async function listProjects(companyId, { status } = {}) {
+const PROJECT_SORT_FIELDS = {
+  name: "name",
+  status: "status",
+  tier: "tier",
+  startDate: "startDate",
+  deadline: "deadline",
+  progress: "progress",
+  createdAt: "createdAt",
+};
+
+async function listProjects(
+  companyId,
+  {
+    page = 1,
+    limit = 10,
+    search = "",
+    status = "",
+    sortBy = "createdAt",
+    sortOrder = "desc",
+  } = {},
+) {
   try {
-    if (!companyId) {
-      throw createError("Company ID is required", 400);
+    if (!companyId) throw createError("Company ID is required", 400);
+
+    page = Math.max(1, Number.parseInt(page, 10) || 1);
+    limit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 10));
+    const offset = (page - 1) * limit;
+    const sortField = PROJECT_SORT_FIELDS[sortBy] || "createdAt";
+    const direction =
+      String(sortOrder).toLowerCase() === "asc" ? "ASC" : "DESC";
+    const normalizedSearch = String(search || "").trim();
+
+    const where = { companyId };
+    if (status) where.status = status;
+
+    if (normalizedSearch) {
+      const pattern = { [Op.iLike]: `%${normalizedSearch}%` };
+      where[Op.or] = [
+        { name: pattern },
+        { description: pattern },
+        { status: pattern },
+        { tier: pattern },
+        // These aliases must match the aliases in projectIncludes.
+        { "$client.name$": pattern },
+        { "$projectLead.fullName$": pattern },
+      ];
     }
 
-    const where = {
-      companyId,
-    };
+    const [
+      count,
+      summaryTotal,
+      summaryActive,
+      summaryCompleted,
+      summaryOverdue,
+    ] = await Promise.all([
+      Project.count({
+        where,
+        include: projectIncludes,
+        distinct: true,
+        col: "id",
+      }),
+      Project.count({ where: { companyId } }),
+      Project.count({
+        where: {
+          companyId,
+          status: {
+            [Op.in]: ["Planning", "In Development", "Testing", "On Hold"],
+          },
+        },
+      }),
+      Project.count({ where: { companyId, status: "Completed" } }),
+      Project.count({
+        where: {
+          companyId,
+          deadline: { [Op.lt]: new Date().toISOString().slice(0, 10) },
+          status: { [Op.notIn]: ["Completed", "Cancelled"] },
+        },
+      }),
+    ]);
 
-    if (status) {
-      where.status = status;
-    }
+    const totalPages = Math.ceil(count / limit);
+    // If records were deleted while a user was on a later page, clamp the page.
+    const safePage = totalPages > 0 ? Math.min(page, totalPages) : 1;
+    const safeOffset = (safePage - 1) * limit;
 
-    const projects = await Project.findAll({
+    const result = await Project.findAndCountAll({
       where,
-
       include: projectIncludes,
-
+      distinct: true,
+      limit,
+      offset: safeOffset,
       order: [
-        ["status", "ASC"],
-        ["deadline", "ASC"],
+        [sortField, direction],
         ["createdAt", "DESC"],
+        ["id", "DESC"],
       ],
-
-      limit: MAX_ROWS,
     });
 
     logger.info("Projects fetched", {
       companyId,
-      count: projects.length,
+      count: result.rows.length,
+      total: count,
+      page: safePage,
+      limit,
     });
 
-    return projects.map(formatProject);
+    return {
+      projects: result.rows.map(formatProject),
+      pagination: {
+        page: safePage,
+        limit,
+        total: count,
+        totalPages,
+        hasNextPage: safePage < totalPages,
+        hasPreviousPage: safePage > 1,
+      },
+      // Global company totals, not affected by the current search/status/page.
+      summary: {
+        total: summaryTotal,
+        active: summaryActive,
+        completed: summaryCompleted,
+        overdue: summaryOverdue,
+      },
+    };
   } catch (error) {
     logger.error("Failed to fetch projects", {
       companyId,
       error: error.message,
       stack: error.stack,
     });
-
     throw error;
   }
 }
