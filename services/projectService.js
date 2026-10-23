@@ -138,6 +138,8 @@ const projectIncludes = [
 function formatProject(project) {
   const today = getToday();
 
+  console.log(project.client.user);
+
   const deadline = dateOnly(project.deadline);
 
   const isOpen = !CLOSED_STATUSES.includes(project.status);
@@ -640,34 +642,51 @@ async function listProjects(
   } = {},
 ) {
   try {
-    if (!companyId) throw createError("Company ID is required", 400);
+    if (!companyId) {
+      throw createError("Company ID is required", 400);
+    }
 
-    page = Math.max(1, Number.parseInt(page, 10) || 1);
-    limit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 10));
-    const offset = (page - 1) * limit;
+    // Pagination
+    const currentPage = Math.max(1, Number.parseInt(page, 10) || 1);
+
+    const pageLimit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(limit, 10) || 10),
+    );
+
+    // Sorting
     const sortField = PROJECT_SORT_FIELDS[sortBy] || "createdAt";
+
     const direction =
       String(sortOrder).toLowerCase() === "asc" ? "ASC" : "DESC";
+
+    // Base filters — declare before applying search
+    const where = { companyId };
+
     const normalizedSearch = String(search || "").trim();
 
-    const where = { companyId };
-    if (status) where.status = status;
+    if (status) {
+      where.status = status;
+    }
 
+    // Search project fields only.
+    // Avoid nested User fields until their SQL mappings are confirmed.
     if (normalizedSearch) {
-      const pattern = { [Op.iLike]: `%${normalizedSearch}%` };
+      const pattern = {
+        [Op.iLike]: `%${normalizedSearch}%`,
+      };
+
       where[Op.or] = [
         { name: pattern },
         { description: pattern },
         { status: pattern },
         { tier: pattern },
-        // These aliases must match the aliases in projectIncludes.
-        { "$client.name$": pattern },
-        { "$projectLead.fullName$": pattern },
       ];
     }
 
+    // Company-wide summary counts, independent of search and pagination
     const [
-      count,
+      total,
       summaryTotal,
       summaryActive,
       summaryCompleted,
@@ -679,7 +698,11 @@ async function listProjects(
         distinct: true,
         col: "id",
       }),
-      Project.count({ where: { companyId } }),
+
+      Project.count({
+        where: { companyId },
+      }),
+
       Project.count({
         where: {
           companyId,
@@ -688,27 +711,41 @@ async function listProjects(
           },
         },
       }),
-      Project.count({ where: { companyId, status: "Completed" } }),
+
       Project.count({
         where: {
           companyId,
-          deadline: { [Op.lt]: new Date().toISOString().slice(0, 10) },
-          status: { [Op.notIn]: ["Completed", "Cancelled"] },
+          status: "Completed",
+        },
+      }),
+
+      Project.count({
+        where: {
+          companyId,
+          deadline: {
+            [Op.lt]: getToday(),
+          },
+          status: {
+            [Op.notIn]: ["Completed", "Cancelled"],
+          },
         },
       }),
     ]);
 
-    const totalPages = Math.ceil(count / limit);
-    // If records were deleted while a user was on a later page, clamp the page.
-    const safePage = totalPages > 0 ? Math.min(page, totalPages) : 1;
-    const safeOffset = (safePage - 1) * limit;
+    // Calculate pagination
+    const totalPages = Math.ceil(total / pageLimit);
 
-    const result = await Project.findAndCountAll({
+    const safePage = totalPages > 0 ? Math.min(currentPage, totalPages) : 1;
+
+    const offset = (safePage - 1) * pageLimit;
+
+    // Fetch projects matching the filters
+    const projects = await Project.findAll({
       where,
       include: projectIncludes,
       distinct: true,
-      limit,
-      offset: safeOffset,
+      limit: pageLimit,
+      offset,
       order: [
         [sortField, direction],
         ["createdAt", "DESC"],
@@ -718,23 +755,26 @@ async function listProjects(
 
     logger.info("Projects fetched", {
       companyId,
-      count: result.rows.length,
-      total: count,
+      count: projects.length,
+      total,
       page: safePage,
-      limit,
+      limit: pageLimit,
+      search: normalizedSearch,
+      status: status || null,
     });
 
     return {
-      projects: result.rows.map(formatProject),
+      projects: projects.map(formatProject),
+
       pagination: {
         page: safePage,
-        limit,
-        total: count,
+        limit: pageLimit,
+        total,
         totalPages,
         hasNextPage: safePage < totalPages,
         hasPreviousPage: safePage > 1,
       },
-      // Global company totals, not affected by the current search/status/page.
+
       summary: {
         total: summaryTotal,
         active: summaryActive,
@@ -748,6 +788,7 @@ async function listProjects(
       error: error.message,
       stack: error.stack,
     });
+
     throw error;
   }
 }
