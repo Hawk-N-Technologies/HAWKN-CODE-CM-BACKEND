@@ -1,3 +1,5 @@
+"use strict";
+
 const express = require("express");
 
 const authenticate = require("../middleware/authenticate");
@@ -23,6 +25,12 @@ router.post(
   authenticate(["admin"]),
   uploadCompanyStory,
   companyProfileController.uploadCompanyStoryDocument,
+);
+
+router.get(
+  "/profile/:uuid/story-document",
+  authenticate(["admin"]),
+  companyProfileController.getCompanyStoryDocument,
 );
 
 module.exports = router;
