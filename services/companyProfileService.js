@@ -8,7 +8,6 @@ async function getCompanyProfile(companyId) {
       error.statusCode = 400;
       throw error;
     }
-    console.log(companyId);
     const profile = await CompanyProfile.findOne({
       where: {
         companyId: companyId,
@@ -19,6 +18,8 @@ async function getCompanyProfile(companyId) {
         "officialEmail",
         "vision",
         "mission",
+        "companyStoryDocumentPath",
+        "companyStoryDocumentName",
         "whatPeopleShouldKnow",
         "whyCustomersShouldCare",
         "cultureAndValues",
@@ -88,8 +89,6 @@ async function updateCompanyProfile(uuid, data) {
       companyStory: data.companyStory,
     };
 
-    console.log(allowedFields.companyStory);
-
     await profile.update(allowedFields);
 
     // logger.info("Company profile updated successfully", {
@@ -102,7 +101,11 @@ async function updateCompanyProfile(uuid, data) {
       officialEmail: profile.officialEmail,
       vision: profile.vision,
       mission: profile.mission,
-      blogContent: profile.blogContent,
+      whatPeopleShouldKnow: profile.whatPeopleShouldKnow,
+      whyCustomersShouldCare: profile.whyCustomersShouldCare,
+      cultureAndValues: profile.cultureAndValues,
+      companyStory: profile.companyStory,
+      companyStoryDocumentName: profile.companyStoryDocumentName,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt,
     };
