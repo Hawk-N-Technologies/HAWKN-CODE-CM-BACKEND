@@ -40,6 +40,7 @@ const testerDashboardRoutes = require("./routes/testerDashboardRoutes");
 const taskTestingRoutes = require("./routes/taskTestingRoutes");
 const bugsRoutes = require("./routes/bugsRoutes");
 const developerTestingRoutes = require("./routes/developerTestingRoutes");
+const adminOverviewRoutes = require("./routes/adminOverviewRoutes");
 const http = require("http");
 const notificationRoutes = require("./routes/notificationRoutes");
 const { initializeNotificationSocket } = require("./utils/notificationSocket");
@@ -104,6 +105,7 @@ app.use("/api/task-testing", taskTestingRoutes);
 app.use("/api/bugs", bugsRoutes);
 app.use("/api/developer/testing", developerTestingRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminOverviewRoutes);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;

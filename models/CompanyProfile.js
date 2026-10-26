@@ -51,6 +51,18 @@ const CompanyProfile = sequelize.define(
       allowNull: true,
     },
 
+    // companyStoryDocumentPath: {
+    //   type: DataTypes.STRING(500),
+    //   allowNull: true,
+    //   field: "company_story_document_path",
+    // },
+
+    // companyStoryDocumentName: {
+    //   type: DataTypes.STRING(255),
+    //   allowNull: true,
+    //   field: "company_story_document_name",
+    // },
+
     // Blog sections
     whatPeopleShouldKnow: {
       type: DataTypes.TEXT,
