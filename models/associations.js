@@ -242,15 +242,15 @@ Payroll.belongsTo(Company, {
 | Employee - Payroll
 |--------------------------------------------------------------------------
 */
-
-Employee.hasMany(Payroll, {
-  foreignKey: "employeeId",
+// User - Payroll
+User.hasMany(Payroll, {
+  foreignKey: "userId",
   as: "payrolls",
 });
 
-Payroll.belongsTo(Employee, {
-  foreignKey: "employeeId",
-  as: "employee",
+Payroll.belongsTo(User, {
+  foreignKey: "userId",
+  as: "user",
 });
 
 /*
@@ -752,15 +752,6 @@ ProjectBug.belongsTo(ProjectModule, {
 |--------------------------------------------------------------------------
 */
 
-
-
-
-
-
-
-
-
-
 /*
 |--------------------------------------------------------------------------
 | Employee - Assigned Bugs
@@ -771,8 +762,6 @@ Employee.hasMany(ProjectBug, {
   foreignKey: "assignedTo",
   as: "assignedBugs",
 });
-
-
 
 module.exports = {
   Company,
