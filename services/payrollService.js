@@ -1,6 +1,6 @@
 const { Op, QueryTypes, UniqueConstraintError } = require("@sequelize/core");
 const sequelize = require("../config/db");
-const { User, Payroll } = require("../models/associations");
+const { User, Payroll, Employee } = require("../models/associations");
 const logger = require("../utils/logger");
 
 const SUGGESTION_LIMIT = 8;
@@ -180,32 +180,47 @@ async function searchEmployees(companyId, q, { onlyEmployees = false } = {}) {
  *    Payroll is monthly, so 31 Aug → 29 Sep returns August AND September.
  *  - userUuid → one exact employee (picked from autocomplete)
  *  - status   → Pending / Processed
- */
+ */ const USER_INCLUDE = {
+  model: User,
+  as: "user",
+};
+
 async function listPayroll(companyId, filters = {}) {
   try {
     const where = { companyId };
 
     if (filters.startDate || filters.endDate) {
       where.payPeriod = {};
+
       if (filters.startDate) {
         where.payPeriod[Op.gte] = monthStartOf(toDateString(filters.startDate));
       }
+
       if (filters.endDate) {
         where.payPeriod[Op.lte] = toDateString(filters.endDate);
       }
     }
 
-    if (filters.status) where.status = filters.status;
-
-    const include = { ...EMPLOYEE_INCLUDE };
-    if (filters.userUuid) {
-      include.where = { uuid: filters.userUuid, companyId };
-      include.required = true;
+    if (filters.status) {
+      where.status = filters.status;
     }
+
+    const userInclude = {
+      ...USER_INCLUDE,
+      ...(filters.userUuid
+        ? {
+            where: {
+              uuid: filters.userUuid,
+              companyId,
+            },
+            required: true,
+          }
+        : {}),
+    };
 
     const rows = await Payroll.findAll({
       where,
-      include: [include],
+      include: [userInclude],
       order: [
         ["payPeriod", "DESC"],
         ["createdAt", "DESC"],
@@ -218,6 +233,7 @@ async function listPayroll(companyId, filters = {}) {
       count: rows.length,
       filters,
     });
+
     return rows.map(toResponse);
   } catch (error) {
     logger.error("Failed to fetch payroll", {
@@ -225,6 +241,7 @@ async function listPayroll(companyId, filters = {}) {
       error: error.message,
       stack: error.stack,
     });
+
     throw error;
   }
 }
