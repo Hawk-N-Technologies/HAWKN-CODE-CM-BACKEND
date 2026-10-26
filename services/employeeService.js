@@ -6,33 +6,66 @@ const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
 const { date } = require("joi");
 
-async function getAllEmployees(companyId) {
-  try {
-    return await Employee.findAll({
-      where: {
-        companyId,
-      },
-      include: [
-        {
-          model: User,
-          as: "user",
-          attributes: {
-            exclude: ["passwordHash"],
-          },
-          include: [
-            {
-              model: Role,
-              as: "role",
-              attributes: ["id", "uuid", "name", "description"],
-            },
-          ],
-        },
-      ],
-      order: [["createdAt", "DESC"]],
-    });
-  } catch (error) {
-    throw error;
+async function getAllEmployees(
+  companyId,
+  { search, page = 1, limit = 10, status, role } = {},
+) {
+  const currentPage = Math.max(1, Number(page) || 1);
+  const pageSize = Math.max(1, Math.min(100, Number(limit) || 10));
+  const offset = (currentPage - 1) * pageSize;
+
+  const where = { companyId };
+  const userWhere = {};
+
+  // Search employees by name, email, or phone
+  if (search?.trim()) {
+    userWhere[Op.or] = [
+      { name: { [Op.iLike]: `%${search.trim()}%` } },
+      { email: { [Op.iLike]: `%${search.trim()}%` } },
+      { phone: { [Op.iLike]: `%${search.trim()}%` } },
+    ];
   }
+
+  // Apply status filter
+  if (status) {
+    where.status = status;
+  }
+
+  const userInclude = {
+    model: User,
+    as: "user",
+    attributes: { exclude: ["passwordHash"] },
+    required: Boolean(search?.trim() || role),
+    where: Object.keys(userWhere).length ? userWhere : undefined,
+    include: [
+      {
+        model: Role,
+        as: "role",
+        attributes: ["id", "uuid", "name", "description"],
+        required: Boolean(role),
+        where: role ? { name: role } : undefined,
+      },
+    ],
+  };
+
+  const { count, rows } = await Employee.findAndCountAll({
+    where,
+    include: [userInclude],
+    limit: pageSize,
+    offset,
+    order: [["createdAt", "DESC"]],
+    distinct: true,
+  });
+
+  return {
+    rows,
+    pagination: {
+      total: count,
+      page: currentPage,
+      limit: pageSize,
+      totalPages: Math.ceil(count / pageSize),
+    },
+  };
 }
 
 async function getEmployeeById(employeeId, companyId) {
@@ -951,7 +984,7 @@ async function updatePerson(data, personId, companyId) {
       employeeUpdateData.phone1 = phone1?.trim() || null;
     }
 
-    if (companyEmail !== undefined) {
+    if (companyEmail !== null && companyEmail !== "") {
       const normalizedEmail = companyEmail.trim();
 
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {

@@ -4,18 +4,30 @@ const getEmployees = async (req, res) => {
   try {
     const companyId = req.user.companyId;
 
-    const employees = await employeeService.getAllEmployees(companyId);
+    const { search, page = 1, limit = 10, status, role } = req.query;
+
+    const result = await employeeService.getAllEmployees(companyId, {
+      search,
+      page: Number(page),
+      limit: Number(limit),
+      status,
+      role,
+    });
 
     return res.status(200).json({
       success: true,
-      data: employees,
+      data: result.rows,
+      pagination: result.pagination,
     });
   } catch (error) {
-    console.error("Get employees error:", error);
+    req.logger?.error?.("Get employees error:", {
+      message: error.message,
+      stack: error.stack,
+    });
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message: "Failed to fetch employees.",
+      message: error.message || "Failed to fetch employees.",
     });
   }
 };
