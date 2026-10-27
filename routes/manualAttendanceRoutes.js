@@ -11,5 +11,9 @@ router.post(
   authenticate(["hr"]),
   controller.markAttendance,
 );
-
+router.put(
+  "/:employeeId/edit",
+  authenticate(["hr"]),
+  controller.editAttendance,
+);
 module.exports = router;
