@@ -263,6 +263,10 @@ async function markManualAttendance({
   employeeId,
   session,
   status,
+  leaveType,
+  reason,
+  isPaid,
+  reviewedBy,
 }) {
   if (!companyId) {
     throw createError("Company ID is required.", 400);
@@ -282,8 +286,31 @@ async function markManualAttendance({
     throw createError("Status must be Present or Absent.", 400);
   }
 
-  const { date: attendanceDate, weekday } = getIndiaDateParts();
+  // Validate leave details when HR marks the employee Absent.
+  if (status === "Absent") {
+    const validLeaveTypes = new Set(["SICK", "CASUAL", "OTHER"]);
 
+    if (!validLeaveTypes.has(leaveType)) {
+      throw createError(
+        "Select Sick Leave, Casual Leave, or Custom Leave.",
+        400,
+      );
+    }
+
+    if (leaveType === "OTHER" && !reason?.trim()) {
+      throw createError("Please enter a reason for Custom Leave.", 400);
+    }
+
+    if (reason && reason.trim().length > 1000) {
+      throw createError("Reason cannot exceed 1000 characters.", 400);
+    }
+
+    if (typeof isPaid !== "boolean") {
+      throw createError("Please specify whether this leave is paid.", 400);
+    }
+  }
+
+  const { date: attendanceDate, weekday } = getIndiaDateParts();
   const applicableSessions = getApplicableSessions(weekday);
 
   if (!applicableSessions.includes(session)) {
@@ -298,7 +325,7 @@ async function markManualAttendance({
   const transaction = await sequelize.startUnmanagedTransaction();
 
   try {
-    // Verify the employee belongs to the authenticated company.
+    // Ensure employee belongs to the authenticated company.
     const employee = await Employee.findOne({
       where: {
         id: numericEmployeeId,
@@ -312,7 +339,7 @@ async function markManualAttendance({
       throw createError("Employee not found in this company.", 404);
     }
 
-    // Company holiday blocks attendance for all employees.
+    // Company holiday blocks attendance.
     const holiday = await CompanyHoliday.findOne({
       where: {
         companyId,
@@ -325,28 +352,7 @@ async function markManualAttendance({
       throw createError(`Today is a company holiday: ${holiday.name}.`, 409);
     }
 
-    // Only approved leave for the relevant session blocks attendance.
-    const leave = await EmployeeLeave.findOne({
-      where: {
-        employeeId: numericEmployeeId,
-        companyId,
-        leaveDate: attendanceDate,
-        leaveStatus: "APPROVED",
-        [Op.or]: [{ leaveSession: "FULL_DAY" }, { leaveSession: session }],
-      },
-      transaction,
-    });
-
-    if (leave) {
-      const leaveLabel = leave.leaveSession.toLowerCase().replace("_", "-");
-
-      throw createError(
-        `Attendance cannot be marked because the employee has approved ${leaveLabel} leave.`,
-        409,
-      );
-    }
-
-    // Prevent duplicate attendance for the same session.
+    // Prevent duplicate attendance.
     const existing = await Attendance.findOne({
       where: {
         employeeId: numericEmployeeId,
@@ -359,12 +365,51 @@ async function markManualAttendance({
 
     if (existing) {
       throw createError(
-        `${session === "FIRST_HALF" ? "First" : "Second"}-half attendance has already been marked.`,
+        "Attendance has already been marked for this session.",
         409,
       );
     }
 
-    // Save the status requested by HR.
+    // Prevent overlapping approved leave.
+    const existingLeave = await EmployeeLeave.findOne({
+      where: {
+        employeeId: numericEmployeeId,
+        companyId,
+        leaveDate: attendanceDate,
+        leaveStatus: "APPROVED",
+        [Op.or]: [{ leaveSession: "FULL_DAY" }, { leaveSession: session }],
+      },
+      transaction,
+    });
+
+    if (existingLeave) {
+      throw createError(
+        "The employee already has approved leave for this session.",
+        409,
+      );
+    }
+
+    // When absent, create an approved leave record.
+    if (status === "Absent") {
+      await EmployeeLeave.create(
+        {
+          employeeId: numericEmployeeId,
+          companyId,
+          leaveDate: attendanceDate,
+          leaveType,
+          leaveSession: session,
+          leaveStatus: "APPROVED",
+          isPaid,
+          reason:
+            leaveType === "OTHER" ? reason.trim() : reason?.trim() || null,
+          reviewedBy: reviewedBy || null,
+          reviewedAt: new Date(),
+        },
+        { transaction },
+      );
+    }
+
+    // Save attendance as Present or Absent.
     const attendance = await Attendance.create(
       {
         employeeId: numericEmployeeId,
@@ -385,15 +430,11 @@ async function markManualAttendance({
       await transaction.rollback();
     }
 
-    // Convert concurrent duplicate inserts into a conflict response.
     if (
       error.name === "SequelizeUniqueConstraintError" ||
       error.original?.code === "23505"
     ) {
-      throw createError(
-        "Attendance has already been marked for this employee and session.",
-        409,
-      );
+      throw createError("Attendance or leave has already been recorded.", 409);
     }
 
     throw error;
