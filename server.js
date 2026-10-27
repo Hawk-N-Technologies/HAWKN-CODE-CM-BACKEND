@@ -43,6 +43,7 @@ const developerTestingRoutes = require("./routes/developerTestingRoutes");
 const adminOverviewRoutes = require("./routes/adminOverviewRoutes");
 const http = require("http");
 const notificationRoutes = require("./routes/notificationRoutes");
+const manualAttendanceRoutes = require("./routes/manualAttendanceRoutes");
 const { initializeNotificationSocket } = require("./utils/notificationSocket");
 const User = require("./models/User");
 
@@ -106,6 +107,7 @@ app.use("/api/bugs", bugsRoutes);
 app.use("/api/developer/testing", developerTestingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminOverviewRoutes);
+app.use("/api/attendance/manual", manualAttendanceRoutes);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
