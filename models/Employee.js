@@ -42,15 +42,48 @@ const Employee = sequelize.define(
       field: "company_email",
     },
 
+    address: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
+    city: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+
+    country: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+
+    phone1CountryCode: {
+      type: DataTypes.STRING(5),
+      allowNull: true,
+      field: "phone1_country_code",
+    },
+
     phone2: {
       type: DataTypes.STRING(30),
       allowNull: true,
       field: "phone2",
     },
 
+    phone2CountryCode: {
+      type: DataTypes.STRING(5),
+      allowNull: true,
+      field: "phone2_country_code",
+    },
+
     whatsapp: {
       type: DataTypes.STRING(30),
       allowNull: true,
+    },
+
+    whatsappCountryCode: {
+      type: DataTypes.STRING(5),
+      allowNull: true,
+      field: "whatsapp_country_code",
     },
 
     joiningDate: {
