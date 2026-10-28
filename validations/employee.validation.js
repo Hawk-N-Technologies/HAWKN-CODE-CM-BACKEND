@@ -20,27 +20,57 @@ const createEmployeeSchema = Joi.object({
     .required(),
 
   phone1: Joi.string()
-    .pattern(/^[6-9]\d{9}$/)
+    .pattern(/^\d{4,15}$/)
     .allow("", null)
     .messages({
       "string.pattern.base":
-        "Phone number must be a valid 10-digit Indian mobile number.",
+        "Phone number must contain 4 to 15 digits.",
     }),
 
   phone2: Joi.string()
-    .pattern(/^[6-9]\d{9}$/)
+    .pattern(/^\d{4,15}$/)
     .allow("", null)
     .messages({
       "string.pattern.base":
-        "Phone number must be a valid 10-digit Indian mobile number.",
+        "Phone number must contain 4 to 15 digits.",
     }),
 
   whatsapp: Joi.string()
-    .pattern(/^[6-9]\d{9}$/)
+    .pattern(/^\d{4,15}$/)
     .allow("", null)
     .messages({
       "string.pattern.base":
-        "WhatsApp number must be a valid 10-digit Indian mobile number.",
+        "WhatsApp number must contain 4 to 15 digits.",
+    }),
+
+  address: Joi.string().trim().max(500).allow("", null),
+
+  city: Joi.string().trim().max(100).allow("", null),
+
+  country: Joi.string().trim().max(100).allow("", null),
+
+  phone1CountryCode: Joi.string()
+    .pattern(/^\+[1-9]\d{0,2}$/)
+    .allow("", null)
+    .messages({
+      "string.pattern.base":
+        "Phone 1 country code must be a valid international dialing code.",
+    }),
+
+  phone2CountryCode: Joi.string()
+    .pattern(/^\+[1-9]\d{0,2}$/)
+    .allow("", null)
+    .messages({
+      "string.pattern.base":
+        "Phone 2 country code must be a valid international dialing code.",
+    }),
+
+  whatsappCountryCode: Joi.string()
+    .pattern(/^\+[1-9]\d{0,2}$/)
+    .allow("", null)
+    .messages({
+      "string.pattern.base":
+        "WhatsApp country code must be a valid international dialing code.",
     }),
 
   joiningDate: Joi.date().iso().allow("", null),
