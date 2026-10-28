@@ -39,14 +39,18 @@ const createPayrollSchema = Joi.object({
     .label("LOP deduction")
     // LOP can't be more than the base salary
     .max(Joi.ref("baseSalary"))
-    .messages({ "number.max": "LOP deduction can't be more than the base salary" }),
+    .messages({
+      "number.max": "LOP deduction can't be more than the base salary",
+    }),
 
   bonus: money().default(0).label("Bonus"),
 
   paymentMethod: Joi.string()
     .valid(...PAYMENT_METHODS)
     .default("Bank Transfer")
-    .messages({ "any.only": `Payment method must be one of: ${PAYMENT_METHODS.join(", ")}` }),
+    .messages({
+      "any.only": `Payment method must be one of: ${PAYMENT_METHODS.join(", ")}`,
+    }),
 })
   // Express 5 leaves req.body undefined when nothing is sent — reject that too
   .required()
@@ -64,14 +68,18 @@ const updatePayrollSchema = Joi.object({
     .default(0)
     .label("LOP deduction")
     .max(Joi.ref("baseSalary"))
-    .messages({ "number.max": "LOP deduction can't be more than the base salary" }),
+    .messages({
+      "number.max": "LOP deduction can't be more than the base salary",
+    }),
 
   bonus: money().default(0).label("Bonus"),
 
   paymentMethod: Joi.string()
     .valid(...PAYMENT_METHODS)
     .default("Bank Transfer")
-    .messages({ "any.only": `Payment method must be one of: ${PAYMENT_METHODS.join(", ")}` }),
+    .messages({
+      "any.only": `Payment method must be one of: ${PAYMENT_METHODS.join(", ")}`,
+    }),
 })
   .required()
   .messages({ "any.required": "Request body is required" })
@@ -79,7 +87,9 @@ const updatePayrollSchema = Joi.object({
 
 // List / filter payroll (GET query string)
 const listPayrollQuerySchema = Joi.object({
-  startDate: Joi.date().iso().messages({ "date.format": "Start date must be YYYY-MM-DD" }),
+  startDate: Joi.date()
+    .iso()
+    .messages({ "date.format": "Start date must be YYYY-MM-DD" }),
 
   endDate: Joi.date()
     .iso()
@@ -135,6 +145,5 @@ module.exports = {
   searchEmployeesQuerySchema,
   setSalarySchema,
   listSalariesQuerySchema,
-  updatePayrollSchema
+  updatePayrollSchema,
 };
-
