@@ -60,11 +60,11 @@ const createEmployeeSchema = Joi.object({
     .allow("", null),
 
   aadhaarLast4: Joi.string()
-    .pattern(/^\d{4}$/)
+    .pattern(/^\d{12}$/)
     .allow("", null)
     .messages({
       "string.pattern.base":
-        "Aadhaar last 4 digits must contain exactly 4 digits.",
+        "Aadhaar last 12 digits must contain exactly 4 digits.",
     }),
 
   employmentType: Joi.string()

@@ -8,14 +8,20 @@ const OUTCOMES = ["Confirmed", "Converted", "Ended", "Terminated"];
 const MAX_STIPEND = 10000000;
 
 const isoDate = (label) =>
-  Joi.date().iso().messages({
-    "date.base": `${label} must be a valid date`,
-    "date.format": `${label} must be YYYY-MM-DD`,
-    "any.required": `${label} is required`,
-  });
+  Joi.date()
+    .iso()
+    .messages({
+      "date.base": `${label} must be a valid date`,
+      "date.format": `${label} must be YYYY-MM-DD`,
+      "any.required": `${label} is required`,
+    });
 
 const notes = () =>
-  Joi.string().trim().max(1000).allow("", null).messages({ "string.max": "Notes are too long (max 1000)" });
+  Joi.string()
+    .trim()
+    .max(1000)
+    .allow("", null)
+    .messages({ "string.max": "Notes are too long (max 1000)" });
 
 const stipend = () =>
   Joi.number().min(0).max(MAX_STIPEND).precision(2).allow(null).messages({
@@ -52,7 +58,9 @@ const createPeriodSchema = bodyRules(
     performance: Joi.string()
       .valid(...PERFORMANCE)
       .default("Pending")
-      .messages({ "any.only": `Performance must be one of: ${PERFORMANCE.join(", ")}` }),
+      .messages({
+        "any.only": `Performance must be one of: ${PERFORMANCE.join(", ")}`,
+      }),
     notes: notes(),
   }),
 );
@@ -86,7 +94,9 @@ const closePeriodSchema = bodyRules(
     outcome: Joi.string()
       .valid(...OUTCOMES)
       .required()
-      .messages({ "any.only": `Outcome must be one of: ${OUTCOMES.join(", ")}` }),
+      .messages({
+        "any.only": `Outcome must be one of: ${OUTCOMES.join(", ")}`,
+      }),
     notes: notes(),
     probationEndDate: isoDate("Probation end date")
       .when("outcome", {
@@ -94,7 +104,10 @@ const closePeriodSchema = bodyRules(
         then: Joi.required(),
         otherwise: Joi.forbidden(),
       })
-      .messages({ "any.unknown": "Probation end date is only used when moving an intern to probation" }),
+      .messages({
+        "any.unknown":
+          "Probation end date is only used when moving an intern to probation",
+      }),
   }),
 );
 

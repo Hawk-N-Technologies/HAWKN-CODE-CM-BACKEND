@@ -78,7 +78,7 @@ const Employee = sequelize.define(
     },
 
     aadhaarLast4: {
-      type: DataTypes.STRING(4),
+      type: DataTypes.STRING(12),
       allowNull: true,
       field: "aadhaar_last4",
     },
