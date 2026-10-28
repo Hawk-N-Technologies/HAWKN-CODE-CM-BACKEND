@@ -6,6 +6,67 @@ const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
 const { date } = require("joi");
 
+const countryCodeRegex = /^\+[1-9]\d{0,2}$/;
+const phoneNumberRegex = /^\d{4,15}$/;
+
+function validateContactDetails(data) {
+  const invalid = (message) => {
+    const error = new Error(message);
+    error.statusCode = 400;
+    throw error;
+  };
+
+  const countryCodeFields = [
+    ["phone1CountryCode", "Phone 1 country code"],
+    ["phone2CountryCode", "Phone 2 country code"],
+    ["whatsappCountryCode", "WhatsApp country code"],
+  ];
+
+  for (const [field, label] of countryCodeFields) {
+    const value = data[field];
+
+    if (value !== undefined && value !== null && value !== "") {
+      if (typeof value !== "string" || !countryCodeRegex.test(value.trim())) {
+        invalid(`${label} must be a valid international dialing code.`);
+      }
+    }
+  }
+
+  for (const [field, label] of [
+    ["phone1", "Phone 1"],
+    ["phone2", "Phone 2"],
+    ["whatsapp", "WhatsApp"],
+  ]) {
+    const value = data[field];
+
+    if (value !== undefined && value !== null && value !== "") {
+      if (typeof value !== "string" || !phoneNumberRegex.test(value.trim())) {
+        invalid(`${label} must contain 4 to 15 digits.`);
+      }
+    }
+  }
+
+  for (const [field, label, maxLength] of [
+    ["address", "Address", 500],
+    ["city", "City", 100],
+    ["country", "Country", 100],
+  ]) {
+    const value = data[field];
+
+    if (value !== undefined && value !== null && value !== "") {
+      if (typeof value !== "string" || value.trim().length > maxLength) {
+        invalid(`${label} must be a string of at most ${maxLength} characters.`);
+      }
+    }
+  }
+}
+
+function optionalText(value) {
+  return value === undefined || value === null || value === ""
+    ? null
+    : value.trim();
+}
+
 async function getAllEmployees(
   companyId,
   { search, page = 1, limit = 10, status, role } = {},
@@ -143,8 +204,14 @@ async function createEmployee(data, companyId) {
       confirmPassword,
       roleUuid,
       phone1,
+      phone1CountryCode,
       phone2,
+      phone2CountryCode,
       whatsapp,
+      whatsappCountryCode,
+      address,
+      city,
+      country,
       joiningDate,
       dateOfBirth,
       linkedinUrl,
@@ -154,6 +221,8 @@ async function createEmployee(data, companyId) {
       employmentStatus,
       photoUrl,
     } = data;
+
+    validateContactDetails(data);
 
     const role = await Role.findOne({
       where: {
@@ -205,9 +274,15 @@ async function createEmployee(data, companyId) {
         userId: user.id,
         companyId,
         phone1,
+        phone1CountryCode,
         companyEmail,
         phone2,
+        phone2CountryCode,
         whatsapp,
+        whatsappCountryCode,
+        address,
+        city,
+        country,
         joiningDate,
         dateOfBirth,
         linkedinUrl,
@@ -266,8 +341,14 @@ async function updateEmployee(employeeId, companyId, data) {
       confirmPassword,
       roleUuid,
       phone1,
+      phone1CountryCode,
       phone2,
+      phone2CountryCode,
       whatsapp,
+      whatsappCountryCode,
+      address,
+      city,
+      country,
       joiningDate,
       dateOfBirth,
       linkedinUrl,
@@ -277,6 +358,8 @@ async function updateEmployee(employeeId, companyId, data) {
       employmentStatus,
       photoUrl,
     } = data;
+
+    validateContactDetails(data);
 
     /**
      * --------------------------------------------------
@@ -387,12 +470,36 @@ async function updateEmployee(employeeId, companyId, data) {
         phone1: phone1 || null,
       }),
 
+      ...(phone1CountryCode !== undefined && {
+        phone1CountryCode: phone1CountryCode || null,
+      }),
+
       ...(phone2 !== undefined && {
         phone2: phone2 || null,
       }),
 
+      ...(phone2CountryCode !== undefined && {
+        phone2CountryCode: phone2CountryCode || null,
+      }),
+
       ...(whatsapp !== undefined && {
         whatsapp: whatsapp || null,
+      }),
+
+      ...(whatsappCountryCode !== undefined && {
+        whatsappCountryCode: whatsappCountryCode || null,
+      }),
+
+      ...(address !== undefined && {
+        address: optionalText(address),
+      }),
+
+      ...(city !== undefined && {
+        city: optionalText(city),
+      }),
+
+      ...(country !== undefined && {
+        country: optionalText(country),
       }),
 
       ...(joiningDate !== undefined && {
@@ -593,9 +700,15 @@ async function getPeople(companyId, options = {}) {
           "uuid",
           "companyId",
           "companyEmail",
+          "address",
+          "city",
+          "country",
           "phone1",
+          "phone1CountryCode",
           "phone2",
+          "phone2CountryCode",
           "whatsapp",
+          "whatsappCountryCode",
           "joiningDate",
           "dateOfBirth",
           "linkedinUrl",
@@ -644,8 +757,15 @@ async function getPeople(companyId, options = {}) {
       companyEmail: employee?.companyEmail ?? null,
 
       phone1: employee?.phone1 ?? null,
+      phone1CountryCode: employee?.phone1CountryCode ?? null,
       phone2: employee?.phone2 ?? null,
+      phone2CountryCode: employee?.phone2CountryCode ?? null,
       whatsapp: employee?.whatsapp ?? null,
+      whatsappCountryCode: employee?.whatsappCountryCode ?? null,
+
+      address: employee?.address ?? null,
+      city: employee?.city ?? null,
+      country: employee?.country ?? null,
 
       joiningDate: employee?.joiningDate ?? null,
       joinDate: employee?.joiningDate ?? null,
@@ -690,8 +810,19 @@ async function createPerson(data, companyId) {
       password,
       confirmPassword,
       roleUuid,
+      address,
+      city,
+      country,
+      phone1,
+      phone1CountryCode,
+      phone2,
+      phone2CountryCode,
+      whatsapp,
+      whatsappCountryCode,
       isActive = true,
     } = data;
+
+    validateContactDetails(data);
 
     /**
      * Required fields.
@@ -798,6 +929,15 @@ async function createPerson(data, companyId) {
       {
         userId: user.id,
         companyId,
+        address: optionalText(address),
+        city: optionalText(city),
+        country: optionalText(country),
+        phone1: optionalText(phone1),
+        phone1CountryCode: optionalText(phone1CountryCode),
+        phone2: optionalText(phone2),
+        phone2CountryCode: optionalText(phone2CountryCode),
+        whatsapp: optionalText(whatsapp),
+        whatsappCountryCode: optionalText(whatsappCountryCode),
       },
       { transaction },
     );
@@ -834,10 +974,18 @@ async function updatePerson(data, personId, companyId) {
       dateOfBirth,
       joiningDate,
       whatsapp,
+      whatsappCountryCode,
       phone1,
+      phone1CountryCode,
       phone2,
+      phone2CountryCode,
+      address,
+      city,
+      country,
       isActive,
     } = data;
+
+    validateContactDetails(data);
 
     const user = await User.findOne({
       where: {
@@ -984,6 +1132,10 @@ async function updatePerson(data, personId, companyId) {
       employeeUpdateData.phone1 = phone1?.trim() || null;
     }
 
+    if (phone1CountryCode !== undefined) {
+      employeeUpdateData.phone1CountryCode = phone1CountryCode?.trim() || null;
+    }
+
     if (companyEmail !== null && companyEmail !== "") {
       const normalizedEmail = companyEmail.trim();
 
@@ -1013,9 +1165,29 @@ async function updatePerson(data, personId, companyId) {
       employeeUpdateData.phone2 = phone2?.trim() || null;
     }
 
+    if (phone2CountryCode !== undefined) {
+      employeeUpdateData.phone2CountryCode = phone2CountryCode?.trim() || null;
+    }
+
     // WhatsApp
     if (whatsapp !== undefined) {
       employeeUpdateData.whatsapp = whatsapp?.trim() || null;
+    }
+
+    if (whatsappCountryCode !== undefined) {
+      employeeUpdateData.whatsappCountryCode = whatsappCountryCode?.trim() || null;
+    }
+
+    if (address !== undefined) {
+      employeeUpdateData.address = optionalText(address);
+    }
+
+    if (city !== undefined) {
+      employeeUpdateData.city = optionalText(city);
+    }
+
+    if (country !== undefined) {
+      employeeUpdateData.country = optionalText(country);
     }
 
     // Date of birth

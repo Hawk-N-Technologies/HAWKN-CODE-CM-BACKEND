@@ -95,6 +95,7 @@ const createEmployee = async (req, res) => {
     console.error("Create employee error:", error);
 
     if (
+      error.statusCode === 400 ||
       error.message === "Invalid or inactive role." ||
       error.message === "A user with this email already exists."
     ) {
@@ -130,6 +131,7 @@ const updateEmployee = async (req, res) => {
     console.error("Update employee error:", error);
 
     if (
+      error.statusCode === 400 ||
       error.message === "Employee not found." ||
       error.message === "Invalid or inactive role."
     ) {

@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 const sequelize = require("./config/db");
+const { Sequelize } = require("@sequelize/core");
+
 const companyRoutes = require("./routes/companyRoutes");
 const errorHandler = require("./middleware/errorHandler");
 const cookieParser = require("cookie-parser");
@@ -130,7 +132,7 @@ async function startServer() {
   }
 }
 
-async function dropCompanyProfileTable() {
+async function alterEmployeeTable() {
   try {
     await sequelize.authenticate();
 
@@ -138,11 +140,14 @@ async function dropCompanyProfileTable() {
 
     await sequelize
       .getQueryInterface()
-      .dropTable("company_roles_responsibilities");
+      .changeColumn("employees", "aadhaar_last4", {
+        type: Sequelize.STRING(12),
+        allowNull: true, // Keep consistent with your existing schema
+      });
 
-    console.log("company_profiles table dropped successfully");
+    console.log("employee.aadhar_last4 altered successfully");
   } catch (error) {
-    console.error("Failed to drop company_profiles table:", error.message);
+    console.error("Failed to alter employee table:", error.message);
     process.exit(1);
   }
 }

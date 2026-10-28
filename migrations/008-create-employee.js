@@ -91,7 +91,7 @@ module.exports = {
       },
 
       aadhaar_last4: {
-        type: Sequelize.STRING(4),
+        type: Sequelize.STRING(12),
         allowNull: true,
       },
 
