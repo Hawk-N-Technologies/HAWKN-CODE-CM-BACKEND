@@ -1,6 +1,6 @@
 const { Op, QueryTypes, UniqueConstraintError } = require("@sequelize/core");
 const sequelize = require("../config/db");
-const { User, Payroll, Employee } = require("../models/associations");
+const { User, Payroll, Employee, Company } = require("../models/associations");
 const logger = require("../utils/logger");
 
 const SUGGESTION_LIMIT = 8;
@@ -34,11 +34,12 @@ const escapeLike = (text) => text.replace(/[\\%_]/g, (char) => `\\${char}`);
 
 // What the frontend gets — UUIDs only, numbers as numbers
 function toResponse(payroll) {
-  const employee = payroll.employee;
+  const user = payroll.user ?? null;
+  const employee = user?.employee ?? null;
 
   return {
     uuid: payroll.uuid,
-    payPeriod: String(payroll.payPeriod).slice(0, 7), // "2026-09"
+    payPeriod: String(payroll.payPeriod).slice(0, 7),
     baseSalary: Number(payroll.baseSalary),
     lopDeduction: Number(payroll.lopDeduction),
     bonus: Number(payroll.bonus),
@@ -47,15 +48,15 @@ function toResponse(payroll) {
     status: payroll.status,
     processedAt: payroll.processedAt,
     createdAt: payroll.createdAt,
-    employee: employee
+
+    employee: user
       ? {
-          uuid: employee.uuid,
-          firstName: employee.firstName,
-          lastName: employee.lastName,
-          fullName: [employee.firstName, employee.lastName]
-            .filter(Boolean)
-            .join(" "),
-          email: employee.email,
+          uuid: employee?.uuid ?? null,
+          userUuid: user.uuid,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          fullName: [user.firstName, user.lastName].filter(Boolean).join(" "),
+          email: user.email,
         }
       : null,
   };
@@ -183,12 +184,19 @@ async function searchEmployees(companyId, q, { onlyEmployees = false } = {}) {
  */ const USER_INCLUDE = {
   model: User,
   as: "user",
+  include: [
+    {
+      model: Employee,
+      as: "employee",
+      required: false,
+    },
+  ],
 };
 
 async function listPayroll(companyId, filters = {}) {
   try {
     const where = { companyId };
-
+    console.log(filters);
     if (filters.startDate || filters.endDate) {
       where.payPeriod = {};
 
@@ -323,9 +331,28 @@ async function createPayroll(companyId, createdByUserId, data) {
 async function getPayrollByUuid(uuid, companyId) {
   const payroll = await Payroll.findOne({
     where: { uuid, companyId },
-    include: [EMPLOYEE_INCLUDE],
+    include: [
+      {
+        model: User,
+        as: "user",
+        include: [
+          {
+            model: Employee,
+            as: "employee",
+          },
+        ],
+      },
+      {
+        model: Company,
+        as: "company",
+      },
+    ],
   });
-  if (!payroll) throw httpError(404, "Payroll record not found");
+
+  if (!payroll) {
+    throw httpError(404, "Payroll record not found");
+  }
+
   return toResponse(payroll);
 }
 
@@ -334,6 +361,7 @@ async function getPayrollByUuid(uuid, companyId) {
  * Single conditional UPDATE, so two clicks at once can't process twice.
  */
 async function processPayroll(uuid, companyId, processedByUserId) {
+  console.log(uuid);
   try {
     const [updatedCount] = await Payroll.update(
       {
