@@ -224,11 +224,10 @@ const getEmployeeWithSalary = async ({ companyId, userUuid }) => {
         model: Employee,
         as: "employee",
         required: true,
-
         include: [
           {
             model: EmployeeSalary,
-            as: "salary",
+            as: "salaries",
             required: true,
           },
         ],
@@ -248,11 +247,13 @@ const getEmployeeWithSalary = async ({ companyId, userUuid }) => {
     throw error;
   }
 
-  if (!user.employee.salary) {
+  // Employee.hasMany(EmployeeSalary) returns an array.
+  const salary = user.employee.salaries?.[0];
+
+  if (!salary) {
     const error = new Error(
       "Salary structure is not configured for this employee",
     );
-
     error.statusCode = 400;
     throw error;
   }
@@ -260,7 +261,7 @@ const getEmployeeWithSalary = async ({ companyId, userUuid }) => {
   return {
     user,
     employee: user.employee,
-    salary: user.employee.salary,
+    salary,
   };
 };
 
@@ -401,7 +402,7 @@ const calculatePayroll = async ({ companyId, userUuid, payPeriod }) => {
   // ---------------------------------------------------------
   // Employee + salary
   // ---------------------------------------------------------
-
+  console.log("ehllooo  ", userUuid);
   const { user, employee, salary } = await getEmployeeWithSalary({
     companyId,
     userUuid,
