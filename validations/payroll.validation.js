@@ -1,6 +1,18 @@
 const Joi = require("joi");
 
 const PAYMENT_METHODS = ["Bank Transfer", "UPI", "Cheque", "Cash"];
+const PAYMENT_BANKS = [
+  "SBI",
+  "BOB",
+  "Kotak",
+  "HDFC",
+  "ICICI",
+  "Axis",
+  "PNB",
+  "Yes Bank",
+  "IndusInd",
+  "Other",
+];
 const STATUSES = ["Pending", "Processed"];
 const MAX_AMOUNT = 10000000; // ₹1 crore per field — blocks typos like an extra 0s
 
@@ -51,6 +63,15 @@ const createPayrollSchema = Joi.object({
     .messages({
       "any.only": `Payment method must be one of: ${PAYMENT_METHODS.join(", ")}`,
     }),
+
+  // Bank is an add-on to the payment method (e.g. Bank Transfer → SBI)
+  paymentBank: Joi.string()
+    .valid(...PAYMENT_BANKS)
+    .allow("", null)
+    .default("SBI")
+    .messages({
+      "any.only": `Payment bank must be one of: ${PAYMENT_BANKS.join(", ")}`,
+    }),
 })
   // Express 5 leaves req.body undefined when nothing is sent — reject that too
   .required()
@@ -79,6 +100,14 @@ const updatePayrollSchema = Joi.object({
     .default("Bank Transfer")
     .messages({
       "any.only": `Payment method must be one of: ${PAYMENT_METHODS.join(", ")}`,
+    }),
+
+  paymentBank: Joi.string()
+    .valid(...PAYMENT_BANKS)
+    .allow("", null)
+    .default("SBI")
+    .messages({
+      "any.only": `Payment bank must be one of: ${PAYMENT_BANKS.join(", ")}`,
     }),
 })
   .required()
@@ -139,6 +168,7 @@ const listSalariesQuerySchema = Joi.object({
 
 module.exports = {
   PAYMENT_METHODS,
+  PAYMENT_BANKS,
   createPayrollSchema,
   updatePayrollSchema,
   listPayrollQuerySchema,

@@ -56,6 +56,18 @@ const Payroll = sequelize.define(
       defaultValue: 0,
     },
 
+    startDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      field: "start_date",
+    },
+
+    endDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      field: "end_date",
+    },
+
     netSalary: {
       type: DataTypes.DECIMAL(12, 2),
       allowNull: false,
@@ -67,6 +79,12 @@ const Payroll = sequelize.define(
       allowNull: false,
       defaultValue: "Bank Transfer",
       columnName: "payment_method",
+    },
+
+    paymentBank: {
+      type: DataTypes.STRING(30),
+      allowNull: true,
+      columnName: "payment_bank",
     },
 
     status: {

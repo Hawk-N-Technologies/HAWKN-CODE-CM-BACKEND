@@ -7,6 +7,7 @@ const {
   User,
   Attendance,
   Employee,
+  Payroll,
 } = require("../models/associations");
 const logger = require("../utils/logger");
 const CompanyHoliday = require("../models/CompanyHoliday");
@@ -388,21 +389,43 @@ const buildHolidayMap = (holidays) => {
   return map;
 };
 
-// ---------------------------------------------------------------------------
-// Calculate payroll
-// ---------------------------------------------------------------------------
-
 const calculatePayroll = async ({ companyId, userUuid, payPeriod }) => {
-  const {
-    startDate,
-    endDate,
-    payPeriod: normalizedPayPeriod,
-  } = getMonthRange(payPeriod);
+  // ---------------------------------------------------------
+  // 1. Normalize selected period
+  // Accepts "2026-10" or "2026-10-01"
+  // ---------------------------------------------------------
+
+  const match = String(payPeriod ?? "").match(
+    /^(\d{4})-(0[1-9]|1[0-2])(?:-01)?$/,
+  );
+
+  if (!match) {
+    throw httpError(400, "Invalid pay period. Expected YYYY-MM.");
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const selectedMonth = `${year}-${String(month).padStart(2, "0")}`;
+  const normalizedPayPeriod = `${selectedMonth}-01`;
+
+  const formatDate = (date) => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid payroll date: ${date}`);
+    }
+
+    return date.toISOString().slice(0, 10);
+  };
+
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const monthEnd = new Date(Date.UTC(year, month, 0));
+
+  // Exclusive query boundary for the selected month.
+  const monthEndExclusive = new Date(Date.UTC(year, month, 1));
 
   // ---------------------------------------------------------
-  // Employee + salary
+  // 2. Employee and salary
   // ---------------------------------------------------------
-  console.log("ehllooo  ", userUuid);
+
   const { user, employee, salary } = await getEmployeeWithSalary({
     companyId,
     userUuid,
@@ -410,110 +433,225 @@ const calculatePayroll = async ({ companyId, userUuid, payPeriod }) => {
 
   const baseSalary = Number(salary.salary);
 
+  if (!Number.isFinite(baseSalary) || baseSalary < 0) {
+    throw httpError(400, "Invalid employee salary");
+  }
+
   // ---------------------------------------------------------
-  // Records
+  // 3. Find existing processed payroll for the selected month
+  // Status must match processPayroll(): "Processed"
+  // ---------------------------------------------------------
+
+  const existingPayroll = await Payroll.findOne({
+    where: {
+      companyId,
+      userId: user.id,
+      payPeriod: normalizedPayPeriod,
+      status: "Processed",
+    },
+  });
+
+  if (existingPayroll) {
+    throw httpError(
+      409,
+      `Payroll for ${selectedMonth} has already been processed`,
+    );
+  }
+
+  // ---------------------------------------------------------
+  // 4. Previous processed payroll
+  // ---------------------------------------------------------
+
+  const previousPayroll = await Payroll.findOne({
+    where: {
+      companyId,
+      userId: user.id,
+      status: "Processed",
+      payPeriod: {
+        [Op.lt]: normalizedPayPeriod,
+      },
+    },
+    order: [["payPeriod", "DESC"]],
+  });
+  let startDate = new Date(monthStart);
+
+  if (previousPayroll) {
+    if (!previousPayroll.endDate) {
+      throw new Error(
+        `Previous payroll ${previousPayroll.payPeriod} has no endDate. ` +
+          "Backfill its start_date/end_date before calculating the next payroll.",
+      );
+    }
+
+    const previousEndDate = new Date(
+      `${previousPayroll.endDate}T00:00:00.000Z`,
+    );
+
+    if (Number.isNaN(previousEndDate.getTime())) {
+      throw new Error("Previous payroll has an invalid endDate");
+    }
+
+    startDate = new Date(previousEndDate);
+    startDate.setUTCDate(startDate.getUTCDate() + 1);
+  }
+
+  const endDate = new Date(monthEnd);
+
+  if (startDate > endDate) {
+    throw httpError(409, `No valid payroll period exists for ${selectedMonth}`);
+  }
+
+  const payrollStartDate = formatDate(startDate);
+  const payrollEndDate = formatDate(endDate);
+
+  // IMPORTANT: Query through the day after payrollEndDate.
+  // This includes every day in a period that crosses months.
+  const queryEndDate = new Date(endDate);
+  queryEndDate.setUTCDate(queryEndDate.getUTCDate() + 1);
+
+  const exclusiveEndDate = formatDate(queryEndDate);
+
+  console.log("Selected month:", selectedMonth);
+  console.log("Previous payroll:", previousPayroll?.payPeriod ?? null);
+  console.log("Payroll start:", payrollStartDate);
+  console.log("Payroll end:", payrollEndDate);
+
+  // ---------------------------------------------------------
+  // 5. Reject overlapping processed payrolls
+  // Requires startDate and endDate in the Payroll model/database.
+  // ---------------------------------------------------------
+  const overlappingPayroll = await Payroll.findOne({
+    where: {
+      companyId,
+      userId: user.id,
+      status: "Processed",
+      startDate: {
+        [Op.lte]: payrollEndDate,
+      },
+      endDate: {
+        [Op.gte]: payrollStartDate,
+      },
+    },
+  });
+
+  if (overlappingPayroll) {
+    throw httpError(
+      409,
+      `Payroll overlaps an existing processed period: ` +
+        `${overlappingPayroll.startDate} to ${overlappingPayroll.endDate}`,
+    );
+  }
+  // ---------------------------------------------------------
+  // 6. Fetch attendance, leaves and holidays
   // ---------------------------------------------------------
 
   const [attendances, leaves, holidays] = await Promise.all([
     getEmployeeAttendance({
       companyId,
       employeeId: employee.id,
-      startDate,
-      endDate,
+      startDate: payrollStartDate,
+      endDate: exclusiveEndDate,
     }),
 
     getEmployeeLeaves({
       companyId,
       employeeId: employee.id,
-      startDate,
-      endDate,
+      startDate: payrollStartDate,
+      endDate: exclusiveEndDate,
     }),
 
     getCompanyHolidays({
       companyId,
-      startDate,
-      endDate,
+      startDate: payrollStartDate,
+      endDate: exclusiveEndDate,
     }),
   ]);
 
   const attendanceMap = buildAttendanceMap(attendances);
-
   const leaveMap = buildLeaveMap(leaves);
-
   const holidayMap = buildHolidayMap(holidays);
 
   // ---------------------------------------------------------
-  // First calculate total working units
-  //
-  // Monday-Friday = 1
-  // Saturday = 0.5
-  // Sunday = 0
-  //
-  // Paid holiday = 0
-  // Unpaid holiday = its normal working unit
+  // 7. Four weekly offs per calendar month
+  // Policy: first four Sundays are weekly offs.
+  // Saturday is a full working day.
   // ---------------------------------------------------------
 
-  let workingUnits = 0;
-
-  const days = [];
-
-  const start = new Date(`${startDate}T00:00:00.000Z`);
-  const end = new Date(`${endDate}T00:00:00.000Z`);
+  const weeklyOffDates = new Set();
 
   for (
-    let date = new Date(start);
-    date < end;
-    date.setUTCDate(date.getUTCDate() + 1)
+    let m = new Date(
+      Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1),
+    );
+    m <= new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), 1));
+    m.setUTCMonth(m.getUTCMonth() + 1)
   ) {
-    const current = new Date(date);
+    let sundayCount = 0;
 
-    const dateString = formatDate(current);
+    const y = m.getUTCFullYear();
+    const mo = m.getUTCMonth();
 
-    const dayOfWeek = current.getUTCDay();
+    for (
+      let d = new Date(Date.UTC(y, mo, 1));
+      d.getUTCMonth() === mo;
+      d.setUTCDate(d.getUTCDate() + 1)
+    ) {
+      if (d.getUTCDay() !== 0) continue;
 
-    // Sunday
-    if (dayOfWeek === 0) {
+      sundayCount++;
+
+      if (sundayCount <= 4) {
+        weeklyOffDates.add(formatDate(d));
+      }
+    }
+  }
+
+  // ---------------------------------------------------------
+  // 8. Build calendar
+  // ---------------------------------------------------------
+
+  const days = [];
+  let workingUnits = 0;
+
+  for (
+    let d = new Date(startDate);
+    d <= endDate;
+    d.setUTCDate(d.getUTCDate() + 1)
+  ) {
+    const date = formatDate(d);
+    const dayOfWeek = d.getUTCDay();
+
+    if (weeklyOffDates.has(date)) {
       days.push({
-        date: dateString,
+        date,
         dayOfWeek,
         type: "WEEKLY_OFF",
         workingUnits: 0,
       });
-
       continue;
     }
 
-    const normalUnits = dayOfWeek === 6 ? 0.5 : 1;
+    const holiday = holidayMap.get(date);
 
-    const holiday = holidayMap.get(dateString);
-
-    // Paid holiday
     if (holiday?.isPaid) {
       days.push({
-        date: dateString,
+        date,
         dayOfWeek,
         type: "PAID_HOLIDAY",
         holidayName: holiday.name,
         workingUnits: 0,
       });
-
       continue;
     }
 
-    // Unpaid holiday is still a payable/LOP working unit.
-    workingUnits += normalUnits;
+    workingUnits += 1;
 
     days.push({
-      date: dateString,
+      date,
       dayOfWeek,
-      type:
-        dayOfWeek === 6
-          ? "SATURDAY"
-          : holiday
-            ? "UNPAID_HOLIDAY"
-            : "WORKING_DAY",
+      type: holiday ? "UNPAID_HOLIDAY" : "WORKING_DAY",
       holidayName: holiday?.name,
-      workingUnits: normalUnits,
+      workingUnits: 1,
     });
   }
 
@@ -521,103 +659,77 @@ const calculatePayroll = async ({ companyId, userUuid, payPeriod }) => {
     throw new Error("No working days found for this pay period");
   }
 
-  // ---------------------------------------------------------
-  // Salary rates
-  // ---------------------------------------------------------
-
   const dailySalary = baseSalary / workingUnits;
-
   const halfDaySalary = dailySalary / 2;
 
   // ---------------------------------------------------------
-  // Calculate attendance / leave
+  // 9. Calculate attendance and leave
   // ---------------------------------------------------------
 
   let paidUnits = 0;
   let lopUnits = 0;
-
   let presentUnits = 0;
   let paidLeaveUnits = 0;
   let unpaidLeaveUnits = 0;
-
   let paidHolidayUnits = 0;
   let unpaidHolidayUnits = 0;
 
   const breakdown = [];
 
   for (const day of days) {
-    const { date, dayOfWeek, type, workingUnits: dayWorkingUnits } = day;
-
-    // -------------------------------------------------------
-    // Sunday
-    // -------------------------------------------------------
+    const { date, dayOfWeek, type, workingUnits: dayUnits } = day;
 
     if (type === "WEEKLY_OFF") {
       breakdown.push({
         date,
-        type: "WEEKLY_OFF",
+        type,
         workingUnits: 0,
         paidUnits: 0,
         lopUnits: 0,
       });
-
       continue;
     }
-
-    // -------------------------------------------------------
-    // Paid holiday
-    // -------------------------------------------------------
 
     if (type === "PAID_HOLIDAY") {
-      const holidayUnits = dayWorkingUnits;
-
-      paidHolidayUnits += holidayUnits;
-      paidUnits += holidayUnits;
+      paidHolidayUnits += 1;
+      paidUnits += 1;
 
       breakdown.push({
         date,
-        type: "PAID_HOLIDAY",
+        type,
         name: day.holidayName,
-        workingUnits: holidayUnits,
-        paidUnits: holidayUnits,
+        workingUnits: 0,
+        paidUnits: 1,
         lopUnits: 0,
       });
-
       continue;
     }
 
-    // -------------------------------------------------------
-    // Unpaid holiday
-    // -------------------------------------------------------
-
     if (type === "UNPAID_HOLIDAY") {
-      const holidayUnits = dayWorkingUnits;
-
-      unpaidHolidayUnits += holidayUnits;
-      lopUnits += holidayUnits;
+      unpaidHolidayUnits += 1;
+      lopUnits += 1;
 
       breakdown.push({
         date,
-        type: "UNPAID_HOLIDAY",
+        type,
         name: day.holidayName,
-        workingUnits: holidayUnits,
+        workingUnits: 1,
         paidUnits: 0,
-        lopUnits: holidayUnits,
+        lopUnits: 1,
       });
-
       continue;
     }
 
-    // -------------------------------------------------------
-    // Normal working day / Saturday
-    // -------------------------------------------------------
-
     const attendance = attendanceMap.get(date) || {};
-
     const dayLeaves = leaveMap.get(date) || [];
+    const isSaturday = dayOfWeek === 6;
 
-    const sessions =
-      dayOfWeek === 6 ? ["FIRST_HALF"] : ["FIRST_HALF", "SECOND_HALF"];
+    const sessions = isSaturday
+      ? [{ name: "FULL_DAY", units: 1 }]
+      : [
+          { name: "FIRST_HALF", units: 0.5 },
+          { name: "SECOND_HALF", units: 0.5 },
+        ];
 
     let dayPresentUnits = 0;
     let dayPaidLeaveUnits = 0;
@@ -625,89 +737,70 @@ const calculatePayroll = async ({ companyId, userUuid, payPeriod }) => {
     let dayLopUnits = 0;
 
     for (const session of sessions) {
-      const sessionUnits = 0.5;
-
-      // -----------------------------------------------------
-      // Find applicable leave
-      // -----------------------------------------------------
-
       const leave = dayLeaves.find(
         (item) =>
-          item.leaveSession === "FULL_DAY" || item.leaveSession === session,
+          item.leaveSession === "FULL_DAY" ||
+          item.leaveSession === session.name ||
+          (isSaturday &&
+            ["FIRST_HALF", "SECOND_HALF"].includes(item.leaveSession)),
       );
-
-      // -----------------------------------------------------
-      // Paid / unpaid leave
-      // -----------------------------------------------------
 
       if (leave) {
         if (leave.isPaid === true) {
-          dayPaidLeaveUnits += sessionUnits;
-          paidLeaveUnits += sessionUnits;
-          paidUnits += sessionUnits;
+          dayPaidLeaveUnits += session.units;
+          paidLeaveUnits += session.units;
+          paidUnits += session.units;
         } else {
-          dayUnpaidLeaveUnits += sessionUnits;
-          unpaidLeaveUnits += sessionUnits;
-          dayLopUnits += sessionUnits;
-          lopUnits += sessionUnits;
+          dayUnpaidLeaveUnits += session.units;
+          unpaidLeaveUnits += session.units;
+          dayLopUnits += session.units;
+          lopUnits += session.units;
         }
 
         continue;
       }
 
-      // -----------------------------------------------------
-      // Attendance
-      // -----------------------------------------------------
-
-      const status = attendance[session];
+      // buildAttendanceMap stores statuses by attendance.session.
+      // Support FULL_DAY or a single Saturday attendance record.
+      const status = isSaturday
+        ? (attendance.FULL_DAY ??
+          attendance.status ??
+          attendance.attendanceStatus ??
+          attendance.FIRST_HALF)
+        : attendance[session.name];
 
       if (status === "Present") {
-        dayPresentUnits += sessionUnits;
-        presentUnits += sessionUnits;
-        paidUnits += sessionUnits;
+        dayPresentUnits += session.units;
+        presentUnits += session.units;
+        paidUnits += session.units;
       } else {
-        // Missing attendance or Absent
-        dayLopUnits += sessionUnits;
-        lopUnits += sessionUnits;
+        dayLopUnits += session.units;
+        lopUnits += session.units;
       }
     }
 
     breakdown.push({
       date,
       type,
-      workingUnits: dayWorkingUnits,
-
+      workingUnits: dayUnits,
       presentUnits: dayPresentUnits,
-
       paidLeaveUnits: dayPaidLeaveUnits,
-
       unpaidLeaveUnits: dayUnpaidLeaveUnits,
-
       paidUnits: dayPresentUnits + dayPaidLeaveUnits,
-
       lopUnits: dayLopUnits,
     });
   }
 
   // ---------------------------------------------------------
-  // LOP deduction
+  // 10. Salary calculation
   // ---------------------------------------------------------
 
   const lopDeduction = roundMoney(lopUnits * dailySalary);
-
-  // ---------------------------------------------------------
-  // Bonus
-  //
-  // Preview starts with zero.
-  // Create payroll can receive bonus from UI.
-  // ---------------------------------------------------------
-
   const bonus = 0;
-
   const netSalary = roundMoney(baseSalary - lopDeduction + bonus);
 
   // ---------------------------------------------------------
-  // Response expected by your React component
+  // 11. Response
   // ---------------------------------------------------------
 
   return {
@@ -722,39 +815,30 @@ const calculatePayroll = async ({ companyId, userUuid, payPeriod }) => {
 
     payPeriod: normalizedPayPeriod,
 
+    period: {
+      startDate: payrollStartDate,
+      endDate: payrollEndDate,
+    },
+
     salary: {
       salary: roundMoney(baseSalary),
     },
 
     calculation: {
       baseSalary: roundMoney(baseSalary),
-
       lopDeduction,
-
       bonus,
-
       netSalary,
-
       dailySalary: roundMoney(dailySalary),
-
       halfDaySalary: roundMoney(halfDaySalary),
-
       paidUnits: roundUnit(paidUnits),
-
       lopUnits: roundUnit(lopUnits),
-
       workingDays: roundUnit(workingUnits),
-
       presentUnits: roundUnit(presentUnits),
-
       paidLeaveUnits: roundUnit(paidLeaveUnits),
-
       unpaidLeaveUnits: roundUnit(unpaidLeaveUnits),
-
       paidHolidayUnits: roundUnit(paidHolidayUnits),
-
       unpaidHolidayUnits: roundUnit(unpaidHolidayUnits),
-
       breakdown,
     },
   };

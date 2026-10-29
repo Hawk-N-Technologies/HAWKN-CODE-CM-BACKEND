@@ -45,6 +45,7 @@ function toResponse(payroll) {
     bonus: Number(payroll.bonus),
     netSalary: Number(payroll.netSalary),
     paymentMethod: payroll.paymentMethod,
+    paymentBank: payroll.paymentBank,
     status: payroll.status,
     processedAt: payroll.processedAt,
     createdAt: payroll.createdAt,
@@ -295,6 +296,7 @@ async function createPayroll(companyId, createdByUserId, data) {
           bonus: toRupees(toPaise(data.bonus)),
           netSalary: toRupees(netPaise),
           paymentMethod: data.paymentMethod,
+          paymentBank: data.paymentBank,
           status: "Pending",
           createdBy: createdByUserId,
         },
@@ -417,6 +419,7 @@ async function updatePayroll(uuid, companyId, data) {
         bonus: toRupees(toPaise(data.bonus)),
         netSalary: toRupees(netPaise),
         paymentMethod: data.paymentMethod,
+        paymentBank: data.paymentBank,
       },
       { where: { uuid, companyId, status: "Pending" } },
     );
