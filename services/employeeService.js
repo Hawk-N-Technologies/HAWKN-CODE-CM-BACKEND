@@ -4,10 +4,60 @@ const Role = require("../models/Role");
 const { Op } = require("@sequelize/core");
 const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
-const { date } = require("joi");
+const Joi = require("joi");
 
 const countryCodeRegex = /^\+[1-9]\d{0,2}$/;
 const phoneNumberRegex = /^\d{4,15}$/;
+
+function validateRequiredEmployeeFields(data) {
+  const requiredFields = [
+    [
+      "phone1",
+      "Phone number",
+      Joi.string().pattern(phoneNumberRegex).messages({
+        "string.pattern.base": "Phone number must contain 4 to 15 digits.",
+      }),
+    ],
+    ["dateOfBirth", "Date of birth", Joi.date().iso()],
+    [
+      "linkedinUrl",
+      "LinkedIn URL",
+      Joi.string().uri({ scheme: ["http", "https"] }),
+    ],
+    [
+      "githubUrl",
+      "GitHub URL",
+      Joi.string().uri({ scheme: ["http", "https"] }),
+    ],
+    [
+      "aadhaarLast4",
+      "Aadhaar last 4 digits",
+      Joi.string().pattern(/^\d{4}$/).messages({
+        "string.pattern.base":
+          "Aadhaar last 4 digits must contain exactly 4 digits.",
+      }),
+    ],
+  ];
+
+  for (const [field, label, schema] of requiredFields) {
+    const value = data[field];
+
+    if (value === undefined || value === null || (typeof value === "string" && !value.trim())) {
+      const error = new Error(`${label} is required.`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const { error } = schema.validate(
+      typeof value === "string" ? value.trim() : value,
+    );
+
+    if (error) {
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+}
 
 function validateContactDetails(data) {
   const invalid = (message) => {
@@ -223,6 +273,7 @@ async function createEmployee(data, companyId) {
     } = data;
 
     validateContactDetails(data);
+    validateRequiredEmployeeFields(data);
 
     const role = await Role.findOne({
       where: {
@@ -819,10 +870,15 @@ async function createPerson(data, companyId) {
       phone2CountryCode,
       whatsapp,
       whatsappCountryCode,
+      dateOfBirth,
+      linkedinUrl,
+      githubUrl,
+      aadhaarLast4,
       isActive = true,
     } = data;
 
     validateContactDetails(data);
+    validateRequiredEmployeeFields(data);
 
     /**
      * Required fields.
@@ -938,6 +994,10 @@ async function createPerson(data, companyId) {
         phone2CountryCode: optionalText(phone2CountryCode),
         whatsapp: optionalText(whatsapp),
         whatsappCountryCode: optionalText(whatsappCountryCode),
+        dateOfBirth,
+        linkedinUrl: linkedinUrl.trim(),
+        githubUrl: githubUrl.trim(),
+        aadhaarLast4: aadhaarLast4.trim(),
       },
       { transaction },
     );

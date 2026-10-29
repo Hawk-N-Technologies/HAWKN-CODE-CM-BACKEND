@@ -21,8 +21,10 @@ const createEmployeeSchema = Joi.object({
 
   phone1: Joi.string()
     .pattern(/^\d{4,15}$/)
-    .allow("", null)
+    .required()
     .messages({
+      "any.required": "Phone number is required.",
+      "string.empty": "Phone number is required.",
       "string.pattern.base":
         "Phone number must contain 4 to 15 digits.",
     }),
@@ -75,24 +77,38 @@ const createEmployeeSchema = Joi.object({
 
   joiningDate: Joi.date().iso().allow("", null),
 
-  dateOfBirth: Joi.date().iso().allow("", null),
+  dateOfBirth: Joi.date().iso().required().messages({
+    "any.required": "Date of birth is required.",
+    "date.base": "Date of birth must be a valid ISO date.",
+    "date.format": "Date of birth must be a valid ISO date.",
+  }),
 
   linkedinUrl: Joi.string()
     .uri({
       scheme: ["http", "https"],
     })
-    .allow("", null),
+    .required()
+    .messages({
+      "any.required": "LinkedIn URL is required.",
+      "string.empty": "LinkedIn URL is required.",
+    }),
 
   githubUrl: Joi.string()
     .uri({
       scheme: ["http", "https"],
     })
-    .allow("", null),
+    .required()
+    .messages({
+      "any.required": "GitHub URL is required.",
+      "string.empty": "GitHub URL is required.",
+    }),
 
   aadhaarLast4: Joi.string()
-    .pattern(/^\d{12}$/)
-    .allow("", null)
+    .pattern(/^\d{4}$/)
+    .required()
     .messages({
+      "any.required": "Aadhaar last 4 digits are required.",
+      "string.empty": "Aadhaar last 4 digits are required.",
       "string.pattern.base":
         "Aadhaar last 12 digits must contain exactly 4 digits.",
     }),
