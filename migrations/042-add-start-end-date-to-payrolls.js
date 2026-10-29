@@ -2,36 +2,39 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const tableExists = await queryInterface.tableExists("payrolls");
+    const tableName = "payrolls";
+    const constraintName = "chk_payrolls_date_range";
+
+    const tableExists = await queryInterface.tableExists(tableName);
 
     if (!tableExists) {
       throw new Error('Table "payrolls" does not exist');
     }
 
-    const columns = await queryInterface.describeTable("payrolls");
+    let columns = await queryInterface.describeTable(tableName);
 
+    // Add missing columns.
     if (!columns.start_date) {
-      await queryInterface.addColumn("payrolls", "start_date", {
+      await queryInterface.addColumn(tableName, "start_date", {
         type: Sequelize.DATEONLY,
         allowNull: true,
       });
     }
 
     if (!columns.end_date) {
-      await queryInterface.addColumn("payrolls", "end_date", {
+      await queryInterface.addColumn(tableName, "end_date", {
         type: Sequelize.DATEONLY,
         allowNull: true,
       });
     }
 
     // Backfill existing monthly payrolls.
-    // Historical partial periods cannot be inferred from pay_period alone.
     await queryInterface.sequelize.query(`
       UPDATE "payrolls"
       SET
         "start_date" = COALESCE(
           "start_date",
-          "pay_period"
+          "pay_period"::DATE
         ),
         "end_date" = COALESCE(
           "end_date",
@@ -45,28 +48,46 @@ module.exports = {
          OR "end_date" IS NULL;
     `);
 
-    // Enforce valid, inclusive payroll date ranges.
+    // Add the constraint only if it does not already exist.
     await queryInterface.sequelize.query(`
-      ALTER TABLE "payrolls"
-      ADD CONSTRAINT "chk_payrolls_date_range"
-      CHECK ("start_date" <= "end_date");
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_constraint
+          WHERE conname = '${constraintName}'
+            AND conrelid = '"payrolls"'::regclass
+        ) THEN
+          ALTER TABLE "payrolls"
+          ADD CONSTRAINT "${constraintName}"
+          CHECK ("start_date" <= "end_date");
+        END IF;
+      END
+      $$;
     `);
   },
 
   async down(queryInterface) {
+    const tableName = "payrolls";
+
+    if (!(await queryInterface.tableExists(tableName))) {
+      return;
+    }
+
+    // Drop the constraint before removing its columns.
     await queryInterface.sequelize.query(`
       ALTER TABLE "payrolls"
       DROP CONSTRAINT IF EXISTS "chk_payrolls_date_range";
     `);
 
-    const columns = await queryInterface.describeTable("payrolls");
+    const columns = await queryInterface.describeTable(tableName);
 
     if (columns.end_date) {
-      await queryInterface.removeColumn("payrolls", "end_date");
+      await queryInterface.removeColumn(tableName, "end_date");
     }
 
     if (columns.start_date) {
-      await queryInterface.removeColumn("payrolls", "start_date");
+      await queryInterface.removeColumn(tableName, "start_date");
     }
   },
 };
