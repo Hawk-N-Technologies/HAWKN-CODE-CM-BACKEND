@@ -173,6 +173,11 @@ EmployeeSalary.belongsTo(Employee, {
   as: "employee",
 });
 
+Employee.hasOne(EmployeeSalary, {
+  foreignKey: "employeeId",
+  as: "salaryDetails",
+});
+
 /*
 |--------------------------------------------------------------------------
 | Employee - Attendance

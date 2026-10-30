@@ -5,6 +5,7 @@ const { Op } = require("@sequelize/core");
 const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
 const Joi = require("joi");
+const EmployeeSalary = require("../models/EmployeeSalary");
 
 const countryCodeRegex = /^\+[1-9]\d{0,2}$/;
 const phoneNumberRegex = /^\d{4,15}$/;
@@ -32,17 +33,23 @@ function validateRequiredEmployeeFields(data) {
     [
       "aadhaarLast4",
       "Aadhaar last 4 digits",
-      Joi.string().pattern(/^\d{4}$/).messages({
-        "string.pattern.base":
-          "Aadhaar last 4 digits must contain exactly 4 digits.",
-      }),
+      Joi.string()
+        .pattern(/^\d{12}$/)
+        .messages({
+          "string.pattern.base":
+            "Aadhaar last 4 digits must contain exactly 4 digits.",
+        }),
     ],
   ];
 
   for (const [field, label, schema] of requiredFields) {
     const value = data[field];
 
-    if (value === undefined || value === null || (typeof value === "string" && !value.trim())) {
+    if (
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && !value.trim())
+    ) {
       const error = new Error(`${label} is required.`);
       error.statusCode = 400;
       throw error;
@@ -105,7 +112,9 @@ function validateContactDetails(data) {
 
     if (value !== undefined && value !== null && value !== "") {
       if (typeof value !== "string" || value.trim().length > maxLength) {
-        invalid(`${label} must be a string of at most ${maxLength} characters.`);
+        invalid(
+          `${label} must be a string of at most ${maxLength} characters.`,
+        );
       }
     }
   }
@@ -116,7 +125,6 @@ function optionalText(value) {
     ? null
     : value.trim();
 }
-
 async function getAllEmployees(
   companyId,
   { search, page = 1, limit = 10, status, role } = {},
@@ -128,7 +136,6 @@ async function getAllEmployees(
   const where = { companyId };
   const userWhere = {};
 
-  // Search employees by name, email, or phone
   if (search?.trim()) {
     userWhere[Op.or] = [
       { name: { [Op.iLike]: `%${search.trim()}%` } },
@@ -137,7 +144,6 @@ async function getAllEmployees(
     ];
   }
 
-  // Apply status filter
   if (status) {
     where.status = status;
   }
@@ -161,7 +167,15 @@ async function getAllEmployees(
 
   const { count, rows } = await Employee.findAndCountAll({
     where,
-    include: [userInclude],
+    include: [
+      userInclude,
+      {
+        model: EmployeeSalary,
+        as: "salaryDetails",
+        attributes: ["uuid", "salary"],
+        required: false,
+      },
+    ],
     limit: pageSize,
     offset,
     order: [["createdAt", "DESC"]],
@@ -251,6 +265,7 @@ async function createEmployee(data, companyId) {
       email,
       companyEmail,
       password,
+      salary,
       confirmPassword,
       roleUuid,
       phone1,
@@ -348,6 +363,23 @@ async function createEmployee(data, companyId) {
       },
     );
 
+    if (
+      salary === undefined ||
+      salary === null ||
+      !Number.isSafeInteger(Number(salary)) ||
+      Number(salary) < 0
+    ) {
+      throw new Error("Salary must be a valid positive whole number.");
+    }
+
+    await EmployeeSalary.create(
+      {
+        employeeId: employee.id,
+        salary,
+      },
+      { transaction },
+    );
+
     await transaction.commit();
 
     return await getEmployeeById(employee.id, companyId);
@@ -359,7 +391,6 @@ async function createEmployee(data, companyId) {
 
 async function updateEmployee(employeeId, companyId, data) {
   const transaction = await sequelize.startUnmanagedTransaction();
-
   try {
     const employee = await Employee.findOne({
       where: {
@@ -408,6 +439,7 @@ async function updateEmployee(employeeId, companyId, data) {
       employmentType,
       employmentStatus,
       photoUrl,
+      salary,
     } = data;
 
     validateContactDetails(data);
@@ -590,6 +622,40 @@ async function updateEmployee(employeeId, companyId, data) {
       transaction,
     });
 
+    if (salary !== undefined) {
+      if (
+        salary === null ||
+        salary === "" ||
+        !Number.isSafeInteger(Number(salary)) ||
+        Number(salary) < 0
+      ) {
+        throw new Error("Salary must be a valid whole number.");
+      }
+
+      const existingSalary = await EmployeeSalary.findOne({
+        where: {
+          employeeId: employee.id,
+        },
+        transaction,
+      });
+
+      if (existingSalary) {
+        await existingSalary.update(
+          {
+            salary: Number(salary),
+          },
+          { transaction },
+        );
+      } else {
+        await EmployeeSalary.create(
+          {
+            employeeId: employee.id,
+            salary: Number(salary),
+          },
+          { transaction },
+        );
+      }
+    }
     await transaction.commit();
 
     return await getEmployeeById(employeeId, companyId);
@@ -1235,7 +1301,8 @@ async function updatePerson(data, personId, companyId) {
     }
 
     if (whatsappCountryCode !== undefined) {
-      employeeUpdateData.whatsappCountryCode = whatsappCountryCode?.trim() || null;
+      employeeUpdateData.whatsappCountryCode =
+        whatsappCountryCode?.trim() || null;
     }
 
     if (address !== undefined) {

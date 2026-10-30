@@ -81,7 +81,7 @@ const getRoles = async (req, res) => {
 const createEmployee = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-
+   
 
     const employee = await employeeService.createEmployee(req.body, companyId);
 
