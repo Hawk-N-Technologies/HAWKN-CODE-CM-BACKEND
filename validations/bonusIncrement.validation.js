@@ -28,7 +28,11 @@ const yyyyMm = () =>
     });
 
 const reason = () =>
-  Joi.string().trim().max(500).allow("", null).messages({ "string.max": "Reason is too long (max 500)" });
+  Joi.string()
+    .trim()
+    .max(500)
+    .allow("", null)
+    .messages({ "string.max": "Reason is too long (max 500)" });
 
 // ---------- Bonuses ----------
 
@@ -38,7 +42,9 @@ const createBonusSchema = Joi.object({
   bonusType: Joi.string()
     .valid(...BONUS_TYPES)
     .required()
-    .messages({ "any.only": `Bonus type must be one of: ${BONUS_TYPES.join(", ")}` }),
+    .messages({
+      "any.only": `Bonus type must be one of: ${BONUS_TYPES.join(", ")}`,
+    }),
   amount: money().required().label("Amount"),
   reason: reason(),
 })

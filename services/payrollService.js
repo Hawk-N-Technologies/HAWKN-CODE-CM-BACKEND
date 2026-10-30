@@ -37,13 +37,21 @@ function toResponse(payroll) {
   const user = payroll.user ?? null;
   const employee = user?.employee ?? null;
 
+  const toNum = (v) => (v === null || v === undefined ? null : Number(v));
+
   return {
     uuid: payroll.uuid,
     payPeriod: String(payroll.payPeriod).slice(0, 7),
+    startDate: payroll.startDate ?? null,
+    endDate: payroll.endDate ?? null,
     baseSalary: Number(payroll.baseSalary),
     lopDeduction: Number(payroll.lopDeduction),
     bonus: Number(payroll.bonus),
     netSalary: Number(payroll.netSalary),
+    workingDays: toNum(payroll.workingDays),
+    paidDays: toNum(payroll.paidDays),
+    lopDays: toNum(payroll.lopDays),
+    dailySalary: toNum(payroll.dailySalary),
     paymentMethod: payroll.paymentMethod,
     paymentBank: payroll.paymentBank,
     status: payroll.status,
@@ -58,6 +66,9 @@ function toResponse(payroll) {
           lastName: user.lastName,
           fullName: [user.firstName, user.lastName].filter(Boolean).join(" "),
           email: user.email,
+          employeeId: employee?.employeeCode ?? null,
+          designation: employee?.designation ?? null,
+          department: employee?.department ?? null,
         }
       : null,
   };

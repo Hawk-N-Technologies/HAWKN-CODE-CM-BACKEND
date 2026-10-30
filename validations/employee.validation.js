@@ -19,30 +19,34 @@ const createEmployeeSchema = Joi.object({
     })
     .required(),
 
+  salary: Joi.number().integer().min(0).required().messages({
+    "number.base": "Salary must be a valid number.",
+    "number.integer": "Salary must be a whole number without decimals.",
+    "number.min": "Salary cannot be negative.",
+    "any.required": "Salary is required.",
+  }),
+
   phone1: Joi.string()
     .pattern(/^\d{4,15}$/)
     .required()
     .messages({
       "any.required": "Phone number is required.",
       "string.empty": "Phone number is required.",
-      "string.pattern.base":
-        "Phone number must contain 4 to 15 digits.",
+      "string.pattern.base": "Phone number must contain 4 to 15 digits.",
     }),
 
   phone2: Joi.string()
     .pattern(/^\d{4,15}$/)
     .allow("", null)
     .messages({
-      "string.pattern.base":
-        "Phone number must contain 4 to 15 digits.",
+      "string.pattern.base": "Phone number must contain 4 to 15 digits.",
     }),
 
   whatsapp: Joi.string()
     .pattern(/^\d{4,15}$/)
     .allow("", null)
     .messages({
-      "string.pattern.base":
-        "WhatsApp number must contain 4 to 15 digits.",
+      "string.pattern.base": "WhatsApp number must contain 4 to 15 digits.",
     }),
 
   address: Joi.string().trim().max(500).allow("", null),
@@ -104,7 +108,7 @@ const createEmployeeSchema = Joi.object({
     }),
 
   aadhaarLast4: Joi.string()
-    .pattern(/^\d{4}$/)
+    .pattern(/^\d{12}$/)
     .required()
     .messages({
       "any.required": "Aadhaar last 4 digits are required.",
