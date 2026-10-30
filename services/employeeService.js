@@ -125,6 +125,9 @@ function optionalText(value) {
     ? null
     : value.trim();
 }
+
+
+
 async function getAllEmployees(
   companyId,
   { search, page = 1, limit = 10, status, role } = {},

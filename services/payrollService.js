@@ -207,8 +207,22 @@ async function searchEmployees(companyId, q, { onlyEmployees = false } = {}) {
 
 async function listPayroll(companyId, filters = {}) {
   try {
+    if (!companyId) {
+      const error = new Error("Company ID is required");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Pagination
+    const currentPage = Math.max(1, Number(filters.page) || 1);
+    const pageSize = Math.max(1, Math.min(100, Number(filters.limit) || 10));
+
+    const offset = (currentPage - 1) * pageSize;
+
+    // Base filter
     const where = { companyId };
-    console.log(filters);
+
+    // Date filters
     if (filters.startDate || filters.endDate) {
       where.payPeriod = {};
 
@@ -221,40 +235,107 @@ async function listPayroll(companyId, filters = {}) {
       }
     }
 
+    // Payroll status filter
     if (filters.status) {
       where.status = filters.status;
     }
 
-    const userInclude = {
-      ...USER_INCLUDE,
-      ...(filters.userUuid
+    // Employee UUID filter
+    const hasUserUuid = Boolean(filters.userUuid);
+    const searchTerm = String(filters.search || "").trim();
+    const hasSearch = Boolean(searchTerm);
+
+    // User search
+    const userWhere = {};
+
+    if (hasSearch) {
+      const searchPattern = `%${searchTerm}%`;
+
+      userWhere[Op.or] = [
+        {
+          firstName: {
+            [Op.iLike]: searchPattern,
+          },
+        },
+        {
+          lastName: {
+            [Op.iLike]: searchPattern,
+          },
+        },
+        {
+          email: {
+            [Op.iLike]: searchPattern,
+          },
+        },
+      ];
+    }
+
+    // Combine UUID and search filters
+    const combinedUserWhere = {
+      ...(USER_INCLUDE.where || {}),
+      ...(hasUserUuid
         ? {
-            where: {
-              uuid: filters.userUuid,
-              companyId,
-            },
-            required: true,
+            uuid: filters.userUuid,
+            companyId,
           }
         : {}),
+      ...(hasSearch ? userWhere : {}),
     };
 
-    const rows = await Payroll.findAll({
+    const userInclude = {
+      ...USER_INCLUDE,
+      where:
+        hasUserUuid || hasSearch || USER_INCLUDE.where
+          ? combinedUserWhere
+          : undefined,
+      required: hasUserUuid || hasSearch,
+    };
+
+    // Sorting whitelist
+    const allowedSortFields = ["payPeriod", "createdAt", "updatedAt", "status"];
+
+    const sortField = allowedSortFields.includes(filters.sortBy)
+      ? filters.sortBy
+      : "payPeriod";
+
+    const sortDirection =
+      String(filters.sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC";
+
+    // Fetch payroll
+    const { count, rows } = await Payroll.findAndCountAll({
       where,
+
       include: [userInclude],
+
       order: [
-        ["payPeriod", "DESC"],
+        [sortField, sortDirection],
         ["createdAt", "DESC"],
       ],
-      limit: MAX_LIST_ROWS,
+
+      limit: pageSize,
+      offset,
+
+      distinct: true,
     });
 
     logger.info("Payroll list fetched", {
       companyId,
-      count: rows.length,
+      count,
+      page: currentPage,
+      limit: pageSize,
       filters,
     });
 
-    return rows.map(toResponse);
+    return {
+      rows: rows.map(toResponse),
+
+      pagination: {
+        total: count,
+        page: currentPage,
+        limit: pageSize,
+        totalPages: Math.ceil(count / pageSize),
+      },
+    };
   } catch (error) {
     logger.error("Failed to fetch payroll", {
       companyId,
