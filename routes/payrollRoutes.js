@@ -16,14 +16,12 @@ const {
 
 const router = express.Router();
 
-// Payroll is HR-only
-router.use(authenticate(["hr"]));
-
 // ---------- Salary Structure (keep ABOVE "/:uuid" routes) ----------
 
 // Autocomplete — only people with an employee record
 router.get(
   "/salaries/employees/search",
+  authenticate(["admin", "hr"]),
   validateQuery(searchEmployeesQuerySchema),
   employeeSalaryController.searchEmployees,
 );
@@ -31,6 +29,7 @@ router.get(
 // List: ?userUuid= (optional, exact employee)
 router.get(
   "/salaries",
+  authenticate(["admin", "hr"]),
   validateQuery(listSalariesQuerySchema),
   employeeSalaryController.listSalaries,
 );
@@ -38,9 +37,13 @@ router.get(
 // Set / update one employee's salary
 router.put(
   "/salaries",
+  authenticate(["admin", "hr"]),
   validate(setSalarySchema),
   employeeSalaryController.setSalary,
 );
+
+// All payroll endpoints below remain HR-only.
+router.use(authenticate(["hr"]));
 
 // ---------- Payroll runs ----------
 
