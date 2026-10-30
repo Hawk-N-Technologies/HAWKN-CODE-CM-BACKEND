@@ -7,7 +7,6 @@ const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
 const Joi = require("joi");
 const { setSalarySchema } = require("../validations/payroll.validation");
-const EmployeeSalary = require("../models/EmployeeSalary");
 
 const countryCodeRegex = /^\+[1-9]\d{0,2}$/;
 const phoneNumberRegex = /^\d{4,15}$/;
