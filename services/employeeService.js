@@ -1,14 +1,57 @@
 const User = require("../models/User");
 const Employee = require("../models/Employee");
+const EmployeeSalary = require("../models/EmployeeSalary");
 const Role = require("../models/Role");
 const { Op } = require("@sequelize/core");
 const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
 const Joi = require("joi");
+const { setSalarySchema } = require("../validations/payroll.validation");
 const EmployeeSalary = require("../models/EmployeeSalary");
 
 const countryCodeRegex = /^\+[1-9]\d{0,2}$/;
 const phoneNumberRegex = /^\d{4,15}$/;
+const salarySchema = setSalarySchema.extract("salary").integer();
+
+function validateAndNormalizeSalary(salary) {
+  const { error, value } = salarySchema.validate(salary);
+
+  if (error) {
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return value;
+}
+
+async function saveEmployeeSalary(employeeId, salary, transaction) {
+  if (
+    salary === undefined ||
+    salary === null ||
+    (typeof salary === "string" && salary.trim() === "")
+  ) {
+    return;
+  }
+
+  const normalizedSalary = validateAndNormalizeSalary(salary);
+  const existingSalary = await EmployeeSalary.findOne({
+    where: { employeeId },
+    transaction,
+  });
+
+  if (existingSalary) {
+    await existingSalary.update(
+      { salary: normalizedSalary },
+      { transaction },
+    );
+    return;
+  }
+
+  await EmployeeSalary.create(
+    { employeeId, salary: normalizedSalary },
+    { transaction },
+  );
+}
 
 function validateRequiredEmployeeFields(data) {
   const requiredFields = [
@@ -943,6 +986,7 @@ async function createPerson(data, companyId) {
       linkedinUrl,
       githubUrl,
       aadhaarLast4,
+      salary,
       isActive = true,
     } = data;
 
@@ -1050,7 +1094,7 @@ async function createPerson(data, companyId) {
       },
     );
 
-    await Employee.create(
+    const employee = await Employee.create(
       {
         userId: user.id,
         companyId,
@@ -1070,6 +1114,8 @@ async function createPerson(data, companyId) {
       },
       { transaction },
     );
+
+    await saveEmployeeSalary(employee.id, salary, transaction);
 
     await transaction.commit();
 
@@ -1112,6 +1158,7 @@ async function updatePerson(data, personId, companyId) {
       city,
       country,
       isActive,
+      salary,
     } = data;
 
     validateContactDetails(data);
@@ -1362,6 +1409,8 @@ async function updatePerson(data, personId, companyId) {
     if (Object.keys(employeeUpdateData).length > 0) {
       await emp.update(employeeUpdateData, { transaction });
     }
+
+    await saveEmployeeSalary(emp.id, salary, transaction);
 
     await transaction.commit();
 
