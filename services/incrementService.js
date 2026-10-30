@@ -20,7 +20,8 @@ const formatInr = (value) => {
 };
 
 // Today in India as "YYYY-MM-DD" (the company works in IST)
-const todayIst = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+const todayIst = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
 // Joi turns "2026-10-01" into a Date — back to plain "YYYY-MM-DD"
 const toDateString = (date) => new Date(date).toISOString().slice(0, 10);
@@ -48,9 +49,44 @@ function toResponse(row) {
     },
   };
 }
-
-async function listIncrements(companyId, { userUuid } = {}) {
+async function listIncrements(
+  companyId,
+  { userUuid, page = 1, limit = 10 } = {},
+) {
   try {
+    const currentPage = Math.max(1, Number(page) || 1);
+    const pageSize = Math.max(1, Math.min(100, Number(limit) || 10));
+    const offset = (currentPage - 1) * pageSize;
+
+    const replacements = {
+      companyId,
+      userUuid: userUuid ?? null,
+      limit: pageSize,
+      offset,
+    };
+
+    const whereClause = `
+      WHERE e.company_id = :companyId
+      ${userUuid ? "AND u.uuid = :userUuid" : ""}
+    `;
+
+    // Total record count
+    const countResult = await sequelize.query(
+      `SELECT COUNT(*)::int AS total
+         FROM salary_increments i
+         JOIN employees e ON e.id = i.employee_id
+         JOIN users u ON u.id = e.user_id
+         JOIN roles r ON r.id = u.role_id
+        ${whereClause}`,
+      {
+        replacements,
+        type: QueryTypes.SELECT,
+      },
+    );
+
+    const total = countResult[0]?.total || 0;
+
+    // Paginated records
     const rows = await sequelize.query(
       `SELECT i.uuid,
               i.previous_salary AS "previousSalary",
@@ -58,7 +94,10 @@ async function listIncrements(companyId, { userUuid } = {}) {
               i.effective_date  AS "effectiveDate",
               i.reason,
               i.created_at      AS "createdAt",
-              ROW_NUMBER() OVER (PARTITION BY i.employee_id ORDER BY i.id DESC) AS "rowNumber",
+              ROW_NUMBER() OVER (
+                PARTITION BY i.employee_id
+                ORDER BY i.id DESC
+              ) AS "rowNumber",
               u.uuid            AS "userUuid",
               u.first_name      AS "firstName",
               u.last_name       AS "lastName",
@@ -68,20 +107,39 @@ async function listIncrements(companyId, { userUuid } = {}) {
          JOIN employees e ON e.id = i.employee_id
          JOIN users u     ON u.id = e.user_id
          JOIN roles r     ON r.id = u.role_id
-        WHERE e.company_id = :companyId
-          ${userUuid ? "AND u.uuid = :userUuid" : ""}
+        ${whereClause}
         ORDER BY i.id DESC
-        LIMIT :limit`,
+        LIMIT :limit OFFSET :offset`,
       {
-        replacements: { companyId, userUuid: userUuid ?? null, limit: MAX_LIST_ROWS },
+        replacements,
         type: QueryTypes.SELECT,
       },
     );
 
-    logger.info("Increments fetched", { companyId, count: rows.length });
-    return rows.map(toResponse);
+    logger.info("Increments fetched", {
+      companyId,
+      count: rows.length,
+      total,
+      page: currentPage,
+      limit: pageSize,
+    });
+
+    return {
+      rows: rows.map(toResponse),
+      pagination: {
+        total,
+        page: currentPage,
+        limit: pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   } catch (error) {
-    logger.error("Failed to fetch increments", { companyId, error: error.message, stack: error.stack });
+    logger.error("Failed to fetch increments", {
+      companyId,
+      error: error.message,
+      stack: error.stack,
+    });
+
     throw error;
   }
 }
@@ -111,18 +169,29 @@ async function createIncrement(companyId, createdByUserId, data) {
             AND r.name <> 'client'
           LIMIT 1
           FOR UPDATE OF e`,
-        { replacements: { userUuid: data.userUuid, companyId }, type: QueryTypes.SELECT, transaction },
+        {
+          replacements: { userUuid: data.userUuid, companyId },
+          type: QueryTypes.SELECT,
+          transaction,
+        },
       );
 
-      if (!current) throw httpError(400, "Select a valid employee from the suggestions");
+      if (!current)
+        throw httpError(400, "Select a valid employee from the suggestions");
       if (current.salaryId === null) {
-        throw httpError(400, "This employee has no salary yet — set it in Payroll → Salary Structure first");
+        throw httpError(
+          400,
+          "This employee has no salary yet — set it in Payroll → Salary Structure first",
+        );
       }
 
       const previousSalary = Number(current.salary);
       const newSalary = roundMoney(data.newSalary);
       if (newSalary <= previousSalary) {
-        throw httpError(400, `New salary must be higher than the current salary (${formatInr(previousSalary)})`);
+        throw httpError(
+          400,
+          `New salary must be higher than the current salary (${formatInr(previousSalary)})`,
+        );
       }
 
       const increment = await SalaryIncrement.create(
@@ -137,19 +206,32 @@ async function createIncrement(companyId, createdByUserId, data) {
         { transaction },
       );
 
-      await sequelize.query(`UPDATE employee_salaries SET salary = :newSalary WHERE id = :salaryId`, {
-        replacements: { newSalary, salaryId: current.salaryId },
-        transaction,
-      });
+      await sequelize.query(
+        `UPDATE employee_salaries SET salary = :newSalary WHERE id = :salaryId`,
+        {
+          replacements: { newSalary, salaryId: current.salaryId },
+          transaction,
+        },
+      );
 
       return increment.uuid;
     });
 
-    logger.info("Increment created", { companyId, incrementUuid, createdBy: createdByUserId });
-    const [created] = (await listIncrements(companyId)).filter((i) => i.uuid === incrementUuid);
+    logger.info("Increment created", {
+      companyId,
+      incrementUuid,
+      createdBy: createdByUserId,
+    });
+    const [created] = (await listIncrements(companyId)).filter(
+      (i) => i.uuid === incrementUuid,
+    );
     return created;
   } catch (error) {
-    logger.error("Failed to create increment", { companyId, error: error.message, stack: error.stack });
+    logger.error("Failed to create increment", {
+      companyId,
+      error: error.message,
+      stack: error.stack,
+    });
     throw error;
   }
 }
@@ -174,7 +256,11 @@ async function lockEditableIncrement(uuid, companyId, transaction) {
 
   const [latest] = await sequelize.query(
     `SELECT MAX(id) AS "maxId" FROM salary_increments WHERE employee_id = :employeeId`,
-    { replacements: { employeeId: increment.employeeId }, type: QueryTypes.SELECT, transaction },
+    {
+      replacements: { employeeId: increment.employeeId },
+      type: QueryTypes.SELECT,
+      transaction,
+    },
   );
   if (Number(latest.maxId) !== Number(increment.id)) {
     throw httpError(409, "Only the latest increment can be changed");
@@ -182,10 +268,17 @@ async function lockEditableIncrement(uuid, companyId, transaction) {
 
   const [salary] = await sequelize.query(
     `SELECT id, salary FROM employee_salaries WHERE employee_id = :employeeId`,
-    { replacements: { employeeId: increment.employeeId }, type: QueryTypes.SELECT, transaction },
+    {
+      replacements: { employeeId: increment.employeeId },
+      type: QueryTypes.SELECT,
+      transaction,
+    },
   );
   if (!salary || Number(salary.salary) !== Number(increment.newSalary)) {
-    throw httpError(409, "Salary was changed after this increment — it can't be changed automatically");
+    throw httpError(
+      409,
+      "Salary was changed after this increment — it can't be changed automatically",
+    );
   }
 
   return { increment, salary };
@@ -204,12 +297,19 @@ async function updateIncrement(uuid, companyId, data) {
 
   try {
     await sequelize.transaction(async (transaction) => {
-      const { increment, salary } = await lockEditableIncrement(uuid, companyId, transaction);
+      const { increment, salary } = await lockEditableIncrement(
+        uuid,
+        companyId,
+        transaction,
+      );
 
       const previousSalary = Number(increment.previousSalary);
       const newSalary = roundMoney(data.newSalary);
       if (newSalary <= previousSalary) {
-        throw httpError(400, `New salary must be higher than the previous salary (${formatInr(previousSalary)})`);
+        throw httpError(
+          400,
+          `New salary must be higher than the previous salary (${formatInr(previousSalary)})`,
+        );
       }
 
       await sequelize.query(
@@ -227,17 +327,26 @@ async function updateIncrement(uuid, companyId, data) {
         },
       );
 
-      await sequelize.query(`UPDATE employee_salaries SET salary = :newSalary WHERE id = :id`, {
-        replacements: { newSalary, id: salary.id },
-        transaction,
-      });
+      await sequelize.query(
+        `UPDATE employee_salaries SET salary = :newSalary WHERE id = :id`,
+        {
+          replacements: { newSalary, id: salary.id },
+          transaction,
+        },
+      );
     });
 
     logger.info("Increment updated", { companyId, incrementUuid: uuid });
-    const [updated] = (await listIncrements(companyId)).filter((i) => i.uuid === uuid);
+    const [updated] = (await listIncrements(companyId)).filter(
+      (i) => i.uuid === uuid,
+    );
     return updated;
   } catch (error) {
-    logger.error("Failed to update increment", { companyId, incrementUuid: uuid, error: error.message });
+    logger.error("Failed to update increment", {
+      companyId,
+      incrementUuid: uuid,
+      error: error.message,
+    });
     throw error;
   }
 }
@@ -250,12 +359,19 @@ async function updateIncrement(uuid, companyId, data) {
 async function revertIncrement(uuid, companyId) {
   try {
     await sequelize.transaction(async (transaction) => {
-      const { increment, salary } = await lockEditableIncrement(uuid, companyId, transaction);
-
-      await sequelize.query(`UPDATE employee_salaries SET salary = :previous WHERE id = :id`, {
-        replacements: { previous: increment.previousSalary, id: salary.id },
+      const { increment, salary } = await lockEditableIncrement(
+        uuid,
+        companyId,
         transaction,
-      });
+      );
+
+      await sequelize.query(
+        `UPDATE employee_salaries SET salary = :previous WHERE id = :id`,
+        {
+          replacements: { previous: increment.previousSalary, id: salary.id },
+          transaction,
+        },
+      );
       await sequelize.query(`DELETE FROM salary_increments WHERE id = :id`, {
         replacements: { id: increment.id },
         transaction,
@@ -264,7 +380,11 @@ async function revertIncrement(uuid, companyId) {
 
     logger.info("Increment reverted", { companyId, incrementUuid: uuid });
   } catch (error) {
-    logger.error("Failed to revert increment", { companyId, incrementUuid: uuid, error: error.message });
+    logger.error("Failed to revert increment", {
+      companyId,
+      incrementUuid: uuid,
+      error: error.message,
+    });
     throw error;
   }
 }

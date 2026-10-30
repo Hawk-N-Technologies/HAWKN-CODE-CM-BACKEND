@@ -3,8 +3,18 @@ const EmployeeLeave = require("../models/EmployeeLeave");
 const { Op } = require("@sequelize/core");
 const User = require("../models/User");
 const notificationService = require("./notificationService");
-
-async function getLeaveRequests(companyId, status) {
+const Sequelize = require("../config/db");
+async function getLeaveRequests(
+  companyId,
+  {
+    status = "PENDING",
+    search = "",
+    page = 1,
+    limit = 10,
+    sortBy = "leaveDate",
+    sortOrder = "DESC",
+  } = {},
+) {
   try {
     if (!companyId) {
       const error = new Error("Company ID is required");
@@ -12,9 +22,13 @@ async function getLeaveRequests(companyId, status) {
       throw error;
     }
 
-    const where = {
-      companyId,
-    };
+    // Pagination
+    const currentPage = Math.max(1, Number(page) || 1);
+    const pageSize = Math.max(1, Math.min(100, Number(limit) || 10));
+    const offset = (currentPage - 1) * pageSize;
+
+    // Status filter
+    const where = { companyId };
 
     if (status === "PENDING") {
       where.leaveStatus = "PENDING";
@@ -28,26 +42,94 @@ async function getLeaveRequests(companyId, status) {
       throw error;
     }
 
-    const leaves = await EmployeeLeave.findAll({
+    // Search employee
+    const searchTerm = search.trim();
+    const hasSearch = Boolean(searchTerm);
+
+    const userWhere = {};
+
+    if (hasSearch) {
+      const searchPattern = `%${searchTerm}%`;
+
+      userWhere[Op.or] = [
+        {
+          firstName: {
+            [Op.iLike]: searchPattern,
+          },
+        },
+        {
+          lastName: {
+            [Op.iLike]: searchPattern,
+          },
+        },
+        {
+          email: {
+            [Op.iLike]: searchPattern,
+          },
+        },
+        // Full name search (e.g. "Talha Malek")
+        Sequelize.where(
+          Sequelize.fn(
+            "CONCAT",
+            Sequelize.col("employee.user.first_name"),
+            " ",
+            Sequelize.col("employee.user.last_name"),
+          ),
+          {
+            [Op.iLike]: searchPattern,
+          },
+        ),
+      ];
+    }
+
+    // Sorting whitelist
+    const allowedSortFields = ["leaveDate", "createdAt", "updatedAt"];
+
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : "leaveDate";
+
+    const sortDirection =
+      String(sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC";
+
+    // Fetch leave requests
+    const { count, rows } = await EmployeeLeave.findAndCountAll({
       where,
+
       include: [
         {
           model: Employee,
           as: "employee",
           attributes: ["id", "userId"],
+          required: hasSearch,
+
           include: [
             {
               model: User,
               as: "user",
-              attributes: ["id", "first_name", "last_name"],
+              attributes: ["id", "firstName", "lastName", "email"],
+              required: hasSearch,
+              where: hasSearch ? userWhere : undefined,
             },
           ],
         },
       ],
-      order: [["leaveDate", "DESC"]],
+
+      limit: pageSize,
+      offset,
+
+      order: [[sortField, sortDirection]],
+
+      distinct: true,
     });
 
-    return leaves;
+    return {
+      rows,
+      pagination: {
+        total: count,
+        page: currentPage,
+        limit: pageSize,
+        totalPages: Math.ceil(count / pageSize),
+      },
+    };
   } catch (error) {
     console.error("Failed to fetch leave requests:", error);
     throw error;
@@ -146,9 +228,10 @@ async function updateLeaveRequest(companyId, uuid, data) {
       ...(leaveSession !== undefined && { leaveSession }),
       ...(isPaid !== undefined && { isPaid }),
       ...(status !== undefined && { leaveStatus: status }),
-      ...(status !== undefined && status !== "PENDING" && {
-        reviewedAt: new Date(),
-      }),
+      ...(status !== undefined &&
+        status !== "PENDING" && {
+          reviewedAt: new Date(),
+        }),
     });
 
     // Notify the employee when HR makes a final decision.
@@ -168,9 +251,10 @@ async function updateLeaveRequest(companyId, uuid, data) {
             companyId,
             userId: employee.userId,
             type: `LEAVE_${status}`,
-            title: status === "APPROVED"
-              ? "Leave request approved"
-              : "Leave request rejected",
+            title:
+              status === "APPROVED"
+                ? "Leave request approved"
+                : "Leave request rejected",
             message: `Your ${leave.leaveType.toLowerCase()} leave request for ${leave.leaveDate} was ${status.toLowerCase()}.`,
             link: null,
             eventKey: `leave-${leave.uuid}-${status.toLowerCase()}`,
@@ -263,9 +347,9 @@ const createLeaveRequest = async ({
       attributes: ["firstName", "lastName"],
     });
 
-    const applicantName = [applicant?.firstName, applicant?.lastName]
-      .filter(Boolean)
-      .join(" ") || "An employee";
+    const applicantName =
+      [applicant?.firstName, applicant?.lastName].filter(Boolean).join(" ") ||
+      "An employee";
 
     await notificationService.notifyHR({
       companyId,

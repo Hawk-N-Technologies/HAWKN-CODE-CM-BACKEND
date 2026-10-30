@@ -105,7 +105,16 @@ async function createHoliday(companyId, data) {
   }
 }
 
-async function getAllHolidays(companyId) {
+async function getAllHolidays(
+  companyId,
+  {
+    search = "",
+    page = 1,
+    limit = 10,
+    sortBy = "holidayDate",
+    sortOrder = "ASC",
+  } = {},
+) {
   try {
     if (!companyId) {
       const error = new Error("Company ID is required");
@@ -113,10 +122,35 @@ async function getAllHolidays(companyId) {
       throw error;
     }
 
-    const holidays = await CompanyHoliday.findAll({
-      where: {
-        companyId,
-      },
+    // Pagination
+    const currentPage = Math.max(1, Number(page) || 1);
+    const pageSize = Math.max(1, Math.min(100, Number(limit) || 10));
+    const offset = (currentPage - 1) * pageSize;
+
+    // Search
+    const where = {
+      companyId,
+    };
+
+    if (search.trim()) {
+      where.name = {
+        [Op.iLike]: `%${search.trim()}%`,
+      };
+    }
+
+    // Sorting whitelist
+    const allowedSortFields = ["holidayDate", "name", "createdAt", "updatedAt"];
+
+    const sortField = allowedSortFields.includes(sortBy)
+      ? sortBy
+      : "holidayDate";
+
+    const sortDirection =
+      String(sortOrder).toUpperCase() === "DESC" ? "DESC" : "ASC";
+
+    // Fetch holidays
+    const { count, rows } = await CompanyHoliday.findAndCountAll({
+      where,
 
       attributes: [
         "uuid",
@@ -127,15 +161,29 @@ async function getAllHolidays(companyId) {
         "updatedAt",
       ],
 
-      order: [["holidayDate", "ASC"]],
+      order: [[sortField, sortDirection]],
+
+      limit: pageSize,
+      offset,
     });
 
     logger.info("Company holidays fetched successfully", {
       companyId,
-      count: holidays.length,
+      count,
+      page: currentPage,
+      limit: pageSize,
+      search,
     });
 
-    return holidays;
+    return {
+      rows,
+      pagination: {
+        total: count,
+        page: currentPage,
+        limit: pageSize,
+        totalPages: Math.ceil(count / pageSize),
+      },
+    };
   } catch (error) {
     logger.error("Failed to fetch company holidays", {
       companyId,

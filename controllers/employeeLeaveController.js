@@ -3,17 +3,30 @@ const employeeLeaveService = require("../services/employeeLeaveService");
 async function getLeaveRequests(req, res, next) {
   try {
     const companyId = req.user.companyId;
-    const { status = "PENDING" } = req.query;
 
-    const leaves = await employeeLeaveService.getLeaveRequests(
-      companyId,
+    const {
+      status = "PENDING",
+      search,
+      page = 1,
+      limit = 10,
+      sortBy = "leaveDate",
+      sortOrder = "DESC",
+    } = req.query;
+
+    const result = await employeeLeaveService.getLeaveRequests(companyId, {
       status,
-    );
+      search,
+      page: Number(page),
+      limit: Number(limit),
+      sortBy,
+      sortOrder,
+    });
 
     return res.status(200).json({
       success: true,
       message: "Leave requests fetched successfully",
-      data: leaves,
+      data: result.rows,
+      pagination: result.pagination,
     });
   } catch (error) {
     next(error);

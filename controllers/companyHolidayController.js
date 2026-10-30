@@ -23,12 +23,27 @@ async function getAllHolidays(req, res, next) {
   try {
     const companyId = req.user.companyId;
 
-    const holidays = await companyHolidayService.getAllHolidays(companyId);
+    const {
+      search = "",
+      page = 1,
+      limit = 10,
+      sortBy = "holidayDate",
+      sortOrder = "ASC",
+    } = req.query;
+
+    const result = await companyHolidayService.getAllHolidays(companyId, {
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+    });
 
     return res.status(200).json({
       success: true,
       message: "Holidays fetched successfully",
-      data: holidays,
+      data: result.rows,
+      pagination: result.pagination,
     });
   } catch (error) {
     next(error);

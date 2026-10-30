@@ -28,18 +28,42 @@ async function searchEmployees(req, res, next) {
 
 async function listPayroll(req, res, next) {
   try {
-    const records = await payrollService.listPayroll(req.user.companyId, req.validatedQuery);
+    const {
+      startDate,
+      endDate,
+      status,
+      userUuid,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+    } = req.validatedQuery;
+
+    const result = await payrollService.listPayroll(req.user.companyId, {
+      startDate,
+      endDate,
+      status,
+      userUuid,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+    });
 
     return res.status(200).json({
       success: true,
       message: "Payroll fetched successfully",
-      data: records,
+      data: result.rows,
+      pagination: result.pagination,
     });
   } catch (error) {
     logger.error("List payroll controller failed", {
       userId: req.user?.userId,
       error: error.message,
     });
+
     return next(error);
   }
 }
@@ -70,7 +94,9 @@ async function processPayroll(req, res, next) {
   try {
     // Bad UUID → clean 400 (Sequelize would otherwise crash with a 500)
     if (uuidSchema.validate(req.params.uuid).error) {
-      return res.status(400).json({ success: false, message: "Invalid payroll ID" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid payroll ID" });
     }
 
     const record = await payrollService.processPayroll(
@@ -97,7 +123,9 @@ async function processPayroll(req, res, next) {
 async function updatePayroll(req, res, next) {
   try {
     if (uuidSchema.validate(req.params.uuid).error) {
-      return res.status(400).json({ success: false, message: "Invalid payroll ID" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid payroll ID" });
     }
 
     const record = await payrollService.updatePayroll(
@@ -124,7 +152,9 @@ async function updatePayroll(req, res, next) {
 async function deletePayroll(req, res, next) {
   try {
     if (uuidSchema.validate(req.params.uuid).error) {
-      return res.status(400).json({ success: false, message: "Invalid payroll ID" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid payroll ID" });
     }
 
     await payrollService.deletePayroll(req.params.uuid, req.user.companyId);
@@ -150,5 +180,5 @@ module.exports = {
   createPayroll,
   processPayroll,
   updatePayroll,
-  deletePayroll
+  deletePayroll,
 };
