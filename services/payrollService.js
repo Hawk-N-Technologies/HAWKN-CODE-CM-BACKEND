@@ -213,16 +213,32 @@ async function listPayroll(companyId, filters = {}) {
       throw error;
     }
 
-    // Pagination
-    const currentPage = Math.max(1, Number(filters.page) || 1);
-    const pageSize = Math.max(1, Math.min(100, Number(filters.limit) || 10));
+    // 1. Pagination
+    const page = Math.max(1, Number(filters.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(filters.limit) || 10));
+    const offset = (page - 1) * limit;
 
-    const offset = (currentPage - 1) * pageSize;
+    // 2. Sorting validation
+    const allowedSortFields = ["payPeriod", "createdAt", "updatedAt", "status"];
 
-    // Base filter
+    const sortField = allowedSortFields.includes(filters.sortBy)
+      ? filters.sortBy
+      : "payPeriod";
+
+    const sortDirection = String(filters.sortOrder || "DESC").toUpperCase();
+
+    if (!["ASC", "DESC"].includes(sortDirection)) {
+      const error = new Error(
+        "Invalid sortOrder. Allowed values are ASC or DESC",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // 3. Base query filter
     const where = { companyId };
 
-    // Date filters
+    // 4. Date filters
     if (filters.startDate || filters.endDate) {
       where.payPeriod = {};
 
@@ -235,50 +251,39 @@ async function listPayroll(companyId, filters = {}) {
       }
     }
 
-    // Payroll status filter
+    // 5. Payroll status filter
     if (filters.status) {
       where.status = filters.status;
     }
 
-    // Employee UUID filter
+    // 6. Employee filters
     const hasUserUuid = Boolean(filters.userUuid);
     const searchTerm = String(filters.search || "").trim();
     const hasSearch = Boolean(searchTerm);
 
-    // User search
     const userWhere = {};
 
     if (hasSearch) {
       const searchPattern = `%${searchTerm}%`;
 
       userWhere[Op.or] = [
-        {
-          firstName: {
-            [Op.iLike]: searchPattern,
-          },
-        },
-        {
-          lastName: {
-            [Op.iLike]: searchPattern,
-          },
-        },
-        {
-          email: {
-            [Op.iLike]: searchPattern,
-          },
-        },
+        { firstName: { [Op.iLike]: searchPattern } },
+        { lastName: { [Op.iLike]: searchPattern } },
+        { email: { [Op.iLike]: searchPattern } },
       ];
     }
 
-    // Combine UUID and search filters
+    // 7. Combine employee UUID and search conditions
     const combinedUserWhere = {
       ...(USER_INCLUDE.where || {}),
+
       ...(hasUserUuid
         ? {
             uuid: filters.userUuid,
             companyId,
           }
         : {}),
+
       ...(hasSearch ? userWhere : {}),
     };
 
@@ -291,20 +296,16 @@ async function listPayroll(companyId, filters = {}) {
       required: hasUserUuid || hasSearch,
     };
 
-    // Sorting whitelist
-    const allowedSortFields = ["payPeriod", "createdAt", "updatedAt", "status"];
+    console.log("SORT DEBUG:", {
+      receivedSortBy: filters.sortBy,
+      receivedSortOrder: filters.sortOrder,
+      finalSortField: sortField,
+      finalSortDirection: sortDirection,
+    });
 
-    const sortField = allowedSortFields.includes(filters.sortBy)
-      ? filters.sortBy
-      : "payPeriod";
-
-    const sortDirection =
-      String(filters.sortOrder).toUpperCase() === "ASC" ? "ASC" : "DESC";
-
-    // Fetch payroll
+    // 8. Fetch payroll records
     const { count, rows } = await Payroll.findAndCountAll({
       where,
-
       include: [userInclude],
 
       order: [
@@ -312,28 +313,31 @@ async function listPayroll(companyId, filters = {}) {
         ["createdAt", "DESC"],
       ],
 
-      limit: pageSize,
+      limit,
       offset,
-
       distinct: true,
     });
 
+    // 9. Logging
     logger.info("Payroll list fetched", {
       companyId,
       count,
-      page: currentPage,
-      limit: pageSize,
+      page,
+      limit,
+      sortField,
+      sortDirection,
       filters,
     });
 
+    // 10. Response
     return {
       rows: rows.map(toResponse),
 
       pagination: {
         total: count,
-        page: currentPage,
-        limit: pageSize,
-        totalPages: Math.ceil(count / pageSize),
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
       },
     };
   } catch (error) {

@@ -115,10 +115,12 @@ const updatePayrollSchema = Joi.object({
   .prefs({ errors: { wrap: { label: false } } });
 
 // List / filter payroll (GET query string)
+
 const listPayrollQuerySchema = Joi.object({
-  startDate: Joi.date()
-    .iso()
-    .messages({ "date.format": "Start date must be YYYY-MM-DD" }),
+  // Date filters
+  startDate: Joi.date().iso().messages({
+    "date.format": "Start date must be YYYY-MM-DD",
+  }),
 
   endDate: Joi.date()
     .iso()
@@ -131,9 +133,27 @@ const listPayrollQuerySchema = Joi.object({
       "date.min": "End date can't be before start date",
     }),
 
-  userUuid: Joi.string().guid().messages({ "string.guid": "Invalid employee" }),
+  // Employee filters
+  userUuid: Joi.string().guid().messages({
+    "string.guid": "Invalid employee",
+  }),
 
+  search: Joi.string().trim().max(100),
+
+  // Payroll status
   status: Joi.string().valid(...STATUSES),
+
+  // Pagination
+  page: Joi.number().integer().min(1).default(1),
+
+  limit: Joi.number().integer().min(1).max(100).default(10),
+
+  // Sorting
+  sortBy: Joi.string()
+    .valid("payPeriod", "createdAt", "updatedAt", "status")
+    .default("payPeriod"),
+
+  sortOrder: Joi.string().uppercase().valid("ASC", "DESC").default("DESC"),
 });
 
 // Name autocomplete (GET query string)
