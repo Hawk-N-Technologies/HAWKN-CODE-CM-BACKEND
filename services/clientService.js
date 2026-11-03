@@ -12,6 +12,9 @@ const createClient = async ({
   lastName,
   email,
   password,
+  type,
+  gst,
+  domain,
   phone,
   companyName,
   address,
@@ -21,6 +24,7 @@ const createClient = async ({
   try {
     const normalizedEmail = email.trim().toLowerCase();
 
+    // Check existing user within company
     const existingUser = await User.findOne({
       where: {
         companyId,
@@ -33,6 +37,7 @@ const createClient = async ({
       throw new Error("A user with this email already exists.");
     }
 
+    // Find client role
     const clientRole = await Role.findOne({
       where: {
         name: "client",
@@ -44,8 +49,10 @@ const createClient = async ({
       throw new Error("Client role not found.");
     }
 
+    // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
+    // Create user
     const user = await User.create(
       {
         companyId,
@@ -56,21 +63,22 @@ const createClient = async ({
         passwordHash,
         isActive: true,
       },
-      {
-        transaction,
-      },
+      { transaction },
     );
 
+    // Create client
     const client = await Client.create(
       {
         userId: user.id,
         companyId,
+        type,
+        gst: gst?.trim() || null,
+        domain: domain?.trim().toLowerCase() || null,
         phone: phone?.trim() || null,
+        companyName: companyName?.trim() || null,
         address: address?.trim() || null,
       },
-      {
-        transaction,
-      },
+      { transaction },
     );
 
     await transaction.commit();
@@ -82,6 +90,9 @@ const createClient = async ({
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      type: client.type,
+      gst: client.gst,
+      domain: client.domain,
       phone: client.phone,
       companyName: client.companyName,
       address: client.address,
@@ -166,7 +177,7 @@ const getClientById = async (clientId, companyId) => {
 const updateClient = async (
   clientId,
   companyId,
-  { firstName, lastName, email, password, phone, companyName, address },
+  { firstName, lastName, email, password, type, gst, domain, phone, address },
 ) => {
   const transaction = await sequelize.startUnmanagedTransaction();
 
@@ -195,8 +206,13 @@ const updateClient = async (
       throw new Error("Client user not found.");
     }
 
-    if (email) {
+    // Email validation and duplicate check
+    if (email !== undefined) {
       const normalizedEmail = email.trim().toLowerCase();
+
+      if (!normalizedEmail) {
+        throw new Error("Email is required.");
+      }
 
       const existingUser = await User.findOne({
         where: {
@@ -213,7 +229,12 @@ const updateClient = async (
       user.email = normalizedEmail;
     }
 
+    // User fields
     if (firstName !== undefined) {
+      if (!firstName.trim()) {
+        throw new Error("First name is required.");
+      }
+
       user.firstName = firstName.trim();
     }
 
@@ -221,20 +242,38 @@ const updateClient = async (
       user.lastName = lastName?.trim() || null;
     }
 
-    // Password is optional while editing.
-    // If supplied, replace the old password.
+    // Password is optional during editing
     if (password) {
+      if (password.length < 8) {
+        throw new Error("Password must be at least 8 characters long.");
+      }
+
       user.passwordHash = await bcrypt.hash(password, 12);
     }
 
     await user.save({ transaction });
 
-    if (phone !== undefined) {
-      client.phone = phone?.trim() || null;
+    // Client fields
+    if (type !== undefined) {
+      const allowedTypes = ["lead", "converted"];
+
+      if (!allowedTypes.includes(type)) {
+        throw new Error("Type must be either lead or converted.");
+      }
+
+      client.type = type;
     }
 
-    if (companyName !== undefined) {
-      client.companyName = companyName?.trim() || null;
+    if (gst !== undefined) {
+      client.gst = gst?.trim() || null;
+    }
+
+    if (domain !== undefined) {
+      client.domain = domain?.trim().toLowerCase() || null;
+    }
+
+    if (phone !== undefined) {
+      client.phone = phone?.trim() || null;
     }
 
     if (address !== undefined) {
@@ -272,8 +311,6 @@ async function clientProjectsDropdown(userId) {
     console.log(error);
   }
 }
-
-
 
 module.exports = {
   createClient,
