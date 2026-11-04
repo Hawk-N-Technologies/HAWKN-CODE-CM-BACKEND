@@ -102,17 +102,28 @@ const createClient = async (req, res) => {
 const getClients = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-
-    const clients = await clientService.getClients(companyId);
+    const { search, page = 1, limit = 10 } = req.query;
+    console.log(search);
+    const result = await clientService.getClients(companyId, {
+      search,
+      page: Number(page),
+      limit: Number(limit),
+    });
 
     return res.status(200).json({
+      success: true,
       message: "Clients fetched successfully.",
-      data: clients,
+      data: result.rows,
+      pagination: result.pagination,
     });
   } catch (error) {
-    console.error("Get clients error:", error);
+    req.logger?.error?.("Get clients error:", {
+      message: error.message,
+      stack: error.stack,
+    });
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
+      success: false,
       message: error.message || "Failed to fetch clients.",
     });
   }

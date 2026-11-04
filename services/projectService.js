@@ -5,9 +5,11 @@ const Client = require("../models/Client");
 const Employee = require("../models/Employee");
 const User = require("../models/User");
 const Role = require("../models/Role");
-
+const sequelize = require("../config/db");
 const logger = require("../utils/logger");
-
+const BRD = require("../models/BRD");
+const BRDVersion = require("../models/BRDVersion");
+const notificationService = require("../services/notificationService");
 // --------------------------------------------------
 // Constants
 // --------------------------------------------------
@@ -82,19 +84,16 @@ function daysBetween(from, to) {
 // --------------------------------------------------
 // Project Includes
 // --------------------------------------------------
-
 const projectIncludes = [
   {
     model: Client,
     as: "client",
     required: true,
-
     include: [
       {
         model: User,
         as: "user",
         required: true,
-
         attributes: [
           "id",
           "firstName",
@@ -111,13 +110,11 @@ const projectIncludes = [
     model: Employee,
     as: "projectLead",
     required: false,
-
     include: [
       {
         model: User,
         as: "user",
         required: true,
-
         attributes: [
           "id",
           "firstName",
@@ -129,16 +126,46 @@ const projectIncludes = [
       },
     ],
   },
+
+  // BRD and its uploaded versions
+  {
+    model: BRD,
+    as: "brd",
+    required: false,
+    attributes: [
+      "id",
+      "uuid",
+      "title",
+      "description",
+      "status",
+      "createdAt",
+      "updatedAt",
+    ],
+    include: [
+      {
+        model: BRDVersion,
+        as: "versions",
+        required: false,
+        attributes: [
+          "id",
+          "version",
+          "fileName",
+          "fileUrl",
+          "mimeType",
+          "fileSize",
+          "uploadedBy",
+          "createdAt",
+        ],
+      },
+    ],
+  },
 ];
 
 // --------------------------------------------------
 // Format Project Response
 // --------------------------------------------------
-
 function formatProject(project) {
   const today = getToday();
-
-  console.log(project.client.user);
 
   const deadline = dateOnly(project.deadline);
 
@@ -147,8 +174,8 @@ function formatProject(project) {
   const daysLeft = isOpen && deadline ? daysBetween(today, deadline) : null;
 
   const client = project.client;
-
   const projectLead = project.projectLead;
+  const brd = project.brd;
 
   return {
     uuid: project.uuid,
@@ -156,6 +183,8 @@ function formatProject(project) {
     name: project.name,
 
     tier: project.tier,
+
+    projectType: project.projectType,
 
     status: project.status,
 
@@ -169,10 +198,16 @@ function formatProject(project) {
 
     internalDeadline: dateOnly(project.internalDeadline),
 
+    // Project links
+    githubRepos: project.githubRepos || null,
+
+    serverUrl: project.serverUrl || null,
+
     createdAt: project.createdAt,
 
     updatedAt: project.updatedAt,
 
+    // Deadline calculations
     daysLeft,
 
     isOverdue: daysLeft !== null && daysLeft < 0,
@@ -181,6 +216,7 @@ function formatProject(project) {
 
     canDelete: DELETABLE_STATUSES.includes(project.status),
 
+    // Client information
     client: client
       ? {
           uuid: client.uuid,
@@ -205,6 +241,7 @@ function formatProject(project) {
         }
       : null,
 
+    // Project lead information
     projectLead: projectLead
       ? {
           uuid: projectLead.uuid,
@@ -219,13 +256,43 @@ function formatProject(project) {
           email: projectLead.user?.email || null,
         }
       : null,
+
+    // BRD information
+    brd: brd
+      ? {
+          uuid: brd.uuid,
+
+          title: brd.title,
+
+          description: brd.description,
+
+          status: brd.status,
+
+          createdAt: brd.createdAt,
+
+          updatedAt: brd.updatedAt,
+
+          // All uploaded versions, newest first
+          versions: (brd.versions || [])
+            .slice()
+            .sort((a, b) => Number(b.version) - Number(a.version))
+            .map((version) => ({
+              version: version.version,
+
+              fileName: version.fileName,
+
+              fileUrl: version.fileUrl,
+
+              mimeType: version.mimeType,
+
+              fileSize: version.fileSize,
+
+              uploadedAt: version.createdAt,
+            })),
+        }
+      : null,
   };
 }
-
-// --------------------------------------------------
-// Prepare Project Data
-// --------------------------------------------------
-
 async function prepareProjectData(companyId, data, currentProject = null) {
   const errors = {};
 
@@ -234,12 +301,15 @@ async function prepareProjectData(companyId, data, currentProject = null) {
     projectLeadUuid,
     name,
     tier,
+    projectType,
     startDate,
     deadline,
     internalDeadline,
     status,
     progress,
     description,
+    githubRepos,
+    serverUrl,
   } = data;
 
   // --------------------------------------------------
@@ -252,20 +322,8 @@ async function prepareProjectData(companyId, data, currentProject = null) {
     isActive: true,
   };
 
-  /*
-   * During update:
-   * The project's existing client can remain selected
-   * even if the client was later deactivated.
-   */
   if (currentProject?.clientId) {
-    clientWhere[Op.or] = [
-      {
-        isActive: true,
-      },
-      {
-        id: currentProject.clientId,
-      },
-    ];
+    clientWhere[Op.or] = [{ isActive: true }, { id: currentProject.clientId }];
   }
 
   const client = await Client.findOne({
@@ -285,19 +343,12 @@ async function prepareProjectData(companyId, data, currentProject = null) {
   if (projectLeadUuid) {
     const leadWhere = {
       uuid: projectLeadUuid,
-
       companyId,
-
       employmentStatus: {
         [Op.ne]: "Exited",
       },
     };
 
-    /*
-     * During update:
-     * Existing project lead is still allowed even if
-     * they later become inactive/exited.
-     */
     if (currentProject?.projectLeadId) {
       leadWhere[Op.or] = [
         {
@@ -318,7 +369,6 @@ async function prepareProjectData(companyId, data, currentProject = null) {
         {
           model: User,
           as: "user",
-
           required: true,
 
           where: {
@@ -329,7 +379,6 @@ async function prepareProjectData(companyId, data, currentProject = null) {
             {
               model: Role,
               as: "role",
-
               required: true,
 
               where: {
@@ -407,20 +456,17 @@ async function prepareProjectData(companyId, data, currentProject = null) {
   // Duplicate Project Name
   // --------------------------------------------------
 
+  const normalizedName = name.trim();
+
   const duplicateWhere = {
     companyId,
-
     clientId: client.id,
 
     name: {
-      [Op.iLike]: name,
+      [Op.iLike]: normalizedName,
     },
   };
 
-  /*
-   * During update, don't compare the project
-   * against itself.
-   */
   if (currentProject?.id) {
     duplicateWhere.id = {
       [Op.ne]: currentProject.id,
@@ -444,7 +490,7 @@ async function prepareProjectData(companyId, data, currentProject = null) {
   // Completed Project = 100%
   // --------------------------------------------------
 
-  const finalProgress = status === "Completed" ? 100 : progress;
+  const finalProgress = status === "Completed" ? 100 : Number(progress ?? 0);
 
   // --------------------------------------------------
   // DB Ready Values
@@ -455,9 +501,11 @@ async function prepareProjectData(companyId, data, currentProject = null) {
 
     projectLeadId,
 
-    name,
+    name: normalizedName,
 
     tier,
+
+    projectType,
 
     startDate: formattedStartDate,
 
@@ -470,6 +518,11 @@ async function prepareProjectData(companyId, data, currentProject = null) {
     progress: finalProgress,
 
     description: description?.trim() || null,
+
+    // New fields
+    githubRepos: githubRepos?.trim() || null,
+
+    serverUrl: serverUrl?.trim() || null,
   };
 }
 
@@ -836,8 +889,9 @@ async function getProject(uuid, companyId) {
 // --------------------------------------------------
 // Create Project
 // --------------------------------------------------
+async function createProject(companyId, data, userId, file) {
+  const transaction = await sequelize.startUnmanagedTransaction();
 
-async function createProject(companyId, data) {
   try {
     if (!companyId) {
       throw createError("Company ID is required", 400);
@@ -853,18 +907,90 @@ async function createProject(companyId, data) {
 
     const values = await prepareProjectData(companyId, data);
 
-    const project = await Project.create({
-      companyId,
-      ...values,
-    });
+    const project = await Project.create(
+      {
+        companyId,
+        ...values,
+      },
+      { transaction },
+    );
+
+    let brd = null;
+    let brdVersion = null;
+
+    // Create BRD only when a file is uploaded.
+    if (file) {
+      if (!userId) {
+        throw createError("User ID is required", 400);
+      }
+
+      brd = await BRD.create(
+        {
+          projectId: project.id,
+          clientId: project.clientId,
+          companyId,
+          title: `${project.name} BRD`,
+          description: null,
+          status: "PENDING_ADMIN_APPROVAL",
+          createdBy: userId,
+        },
+        { transaction },
+      );
+
+      brdVersion = await BRDVersion.create(
+        {
+          brdId: brd.id,
+          version: 1,
+          fileName: file.originalname,
+          fileUrl: `/uploads/brds/${file.filename}`,
+          storageKey: file.filename,
+          mimeType: file.mimetype,
+          fileSize: file.size,
+          uploadedBy: userId,
+        },
+        { transaction },
+      );
+    }
+
+    await transaction.commit();
 
     logger.info("Project created", {
       companyId,
       uuid: project.uuid,
+      brdUploaded: Boolean(brd),
     });
+
+    // Notify admins after successful commit.
+    if (brd && brdVersion) {
+      try {
+        await notificationService.notifyAdmins({
+          companyId,
+          type: "BRD_SUBMITTED",
+          title: "BRD awaiting Admin review",
+          message: `${brd.title} has been submitted for Admin approval.`,
+          link: "/admin/brd",
+          eventKey: `brd-submitted-${brd.id}-${brdVersion.id}`,
+          metadata: {
+            brdId: brd.id,
+            brdTitle: brd.title,
+          },
+          excludeUserId: userId,
+        });
+      } catch (notificationError) {
+        logger.error("Failed to create BRD submission notification", {
+          companyId,
+          userId,
+          error: notificationError.message,
+        });
+      }
+    }
 
     return getProject(project.uuid, companyId);
   } catch (error) {
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+
     logger.error("Failed to create project", {
       companyId,
       error: error.message,
@@ -874,34 +1000,28 @@ async function createProject(companyId, data) {
     throw error;
   }
 }
-
 // --------------------------------------------------
 // Update Project
 // --------------------------------------------------
+async function updateProject(projectUuid, companyId, data, userId, file) {
+  const transaction = await sequelize.startUnmanagedTransaction();
 
-async function updateProject(uuid, companyId, data) {
   try {
+    if (!projectUuid) {
+      throw createError("Project UUID is required", 400);
+    }
+
     if (!companyId) {
       throw createError("Company ID is required", 400);
     }
 
-    if (!uuid) {
-      throw createError("Project UUID is required", 400);
-    }
-
-    if (!data || typeof data !== "object") {
-      throw createError("Project data is required", 400);
-    }
-
-    if (!data.name?.trim()) {
-      throw createError("Project name is required", 400);
-    }
-
     const project = await Project.findOne({
       where: {
-        uuid,
+        uuid: projectUuid,
         companyId,
       },
+      transaction,
+      lock: "UPDATE",
     });
 
     if (!project) {
@@ -909,19 +1029,116 @@ async function updateProject(uuid, companyId, data) {
     }
 
     const values = await prepareProjectData(companyId, data, project);
+    await project.update(values, { transaction });
 
-    await project.update(values);
+    let brd = null;
+    let brdVersion = null;
+
+    // Replace BRD only when a new file is uploaded.
+    if (file) {
+      if (!userId) {
+        throw createError("User ID is required", 400);
+      }
+
+      brd = await BRD.findOne({
+        where: {
+          projectId: project.id,
+          companyId,
+        },
+        transaction,
+        lock: "UPDATE",
+      });
+
+      let versionNumber = 1;
+
+      if (!brd) {
+        brd = await BRD.create(
+          {
+            projectId: project.id,
+            clientId: project.clientId,
+            companyId,
+            title: `${project.name} BRD`,
+            description: null,
+            status: "PENDING_ADMIN_APPROVAL",
+            createdBy: userId,
+          },
+          { transaction },
+        );
+      } else {
+        const latestVersion = await BRDVersion.findOne({
+          where: {
+            brdId: brd.id,
+          },
+          attributes: ["id", "version"],
+          order: [["version", "DESC"]],
+          transaction,
+          lock: "UPDATE",
+        });
+
+        versionNumber = latestVersion ? latestVersion.version + 1 : 1;
+
+        // New submission goes back to admin approval.
+        brd.status = "PENDING_ADMIN_APPROVAL";
+
+        await brd.save({ transaction });
+      }
+
+      brdVersion = await BRDVersion.create(
+        {
+          brdId: brd.id,
+          version: versionNumber,
+          fileName: file.originalname,
+          fileUrl: `/uploads/brds/${file.filename}`,
+          storageKey: file.filename,
+          mimeType: file.mimetype,
+          fileSize: file.size,
+          uploadedBy: userId,
+        },
+        { transaction },
+      );
+    }
+
+    await transaction.commit();
 
     logger.info("Project updated", {
       companyId,
-      uuid,
+      projectUuid,
+      brdReplaced: Boolean(brdVersion),
     });
 
-    return getProject(uuid, companyId);
+    if (brd && brdVersion) {
+      try {
+        await notificationService.notifyAdmins({
+          companyId,
+          type: "BRD_SUBMITTED",
+          title: "BRD awaiting Admin review",
+          message: `${brd.title} has been submitted for Admin approval.`,
+          link: "/admin/brd",
+          eventKey: `brd-submitted-${brd.id}-${brdVersion.id}`,
+          metadata: {
+            brdId: brd.id,
+            brdTitle: brd.title,
+          },
+          excludeUserId: userId,
+        });
+      } catch (notificationError) {
+        logger.error("Failed to create BRD submission notification", {
+          companyId,
+          userId,
+          error: notificationError.message,
+        });
+      }
+    }
+
+    return getProject(project.uuid, companyId);
   } catch (error) {
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+
     logger.error("Failed to update project", {
       companyId,
-      uuid,
+      projectUuid,
       error: error.message,
       stack: error.stack,
     });

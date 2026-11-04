@@ -553,7 +553,7 @@ CREATE TABLE projects (
     CONSTRAINT chk_projects_status
         CHECK (
             status IN (
-                'Planning',
+                'Planning', 'Phase 1','Phase 2','Phase 3', 'Brd Approval'
                 'In Development',
                 'Testing',
                 'Completed',
