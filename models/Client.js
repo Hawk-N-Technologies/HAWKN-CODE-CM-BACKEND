@@ -30,6 +30,22 @@ const Client = sequelize.define(
       field: "company_id",
     },
 
+    type: {
+      type: DataTypes.ENUM("lead", "converted"),
+      allowNull: false,
+      defaultValue: "lead",
+    },
+
+    gst: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
+
+    domain: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+
     phone: {
       type: DataTypes.STRING(30),
       allowNull: true,

@@ -10,11 +10,15 @@ const createClient = async (req, res) => {
       email,
       password,
       confirmPassword,
+      type,
+      gst,
+      domain,
       phone,
       companyName,
       address,
     } = req.body;
 
+    // Required validations
     if (!firstName?.trim()) {
       return res.status(400).json({
         message: "First name is required.",
@@ -27,9 +31,44 @@ const createClient = async (req, res) => {
       });
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({
+        message: "Please provide a valid email address.",
+      });
+    }
+
     if (!password) {
       return res.status(400).json({
         message: "Password is required.",
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters long.",
+      });
+    }
+
+    if (!confirmPassword) {
+      return res.status(400).json({
+        message: "Confirm password is required.",
+      });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        message: "Password and confirm password do not match.",
+      });
+    }
+
+    // Type validation
+    const allowedTypes = ["lead", "converted"];
+
+    if (!type || !allowedTypes.includes(type)) {
+      return res.status(400).json({
+        message: "Type must be either lead or converted.",
       });
     }
 
@@ -39,6 +78,9 @@ const createClient = async (req, res) => {
       lastName,
       email,
       password,
+      type,
+      gst,
+      domain,
       phone,
       companyName,
       address,
@@ -51,7 +93,7 @@ const createClient = async (req, res) => {
   } catch (error) {
     console.error("Create client error:", error);
 
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       message: error.message || "Failed to create client.",
     });
   }
