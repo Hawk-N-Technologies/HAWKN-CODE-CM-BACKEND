@@ -5,6 +5,7 @@ const User = require("../models/User");
 const Role = require("../models/Role");
 const bcrypt = require("bcrypt");
 const Project = require("../models/Project");
+const { Op } = require("@sequelize/core");
 
 const createClient = async ({
   companyId,
@@ -104,38 +105,88 @@ const createClient = async ({
   }
 };
 
-const getClients = async (companyId) => {
-  const clients = await Client.findAll({
-    where: {
-      companyId,
-    },
-    include: [
-      {
-        model: User,
-        as: "user",
-        attributes: [
-          "id",
-          "uuid",
-          "firstName",
-          "lastName",
-          "email",
-          "isActive",
-          "roleId",
-        ],
-        include: [
-          {
-            model: Role,
-            as: "role",
-            attributes: ["id", "name"],
-          },
-        ],
-      },
-    ],
-    order: [["createdAt", "DESC"]],
-  });
+async function getClients(
+  companyId,
+  { search = "", page = 1, limit = 10 } = {},
+) {
+  try {
+    const currentPage = Math.max(1, Number(page) || 1);
+    const pageSize = Math.max(1, Math.min(100, Number(limit) || 10));
+    const offset = (currentPage - 1) * pageSize;
 
-  return clients;
-};
+    const searchTerm = String(search).trim();
+
+    const where = {
+      companyId,
+    };
+
+    if (searchTerm) {
+      const searchPattern = `%${searchTerm}%`;
+
+      where[Op.or] = [
+        // Search in Client table
+        { phone: { [Op.iLike]: searchPattern } },
+        { gst: { [Op.iLike]: searchPattern } },
+        { domain: { [Op.iLike]: searchPattern } },
+        { address: { [Op.iLike]: searchPattern } },
+
+        // Search in User table
+        { "$user.first_name$": { [Op.iLike]: searchPattern } },
+        { "$user.last_name$": { [Op.iLike]: searchPattern } },
+        { "$user.email$": { [Op.iLike]: searchPattern } },
+      ];
+    }
+
+    const { count, rows } = await Client.findAndCountAll({
+      where,
+
+      include: [
+        {
+          model: User,
+          as: "user",
+          attributes: [
+            "id",
+            "uuid",
+            "firstName",
+            "lastName",
+            "email",
+            "isActive",
+            "roleId",
+          ],
+          required: false,
+          include: [
+            {
+              model: Role,
+              as: "role",
+              attributes: ["id", "name"],
+            },
+          ],
+        },
+      ],
+
+      subQuery: false,
+      distinct: true,
+      col: "id",
+
+      limit: pageSize,
+      offset,
+
+      order: [["createdAt", "DESC"]],
+    });
+
+    return {
+      rows,
+      pagination: {
+        total: count,
+        page: currentPage,
+        limit: pageSize,
+        totalPages: Math.ceil(count / pageSize),
+      },
+    };
+  } catch (error) {
+    console.log(error);
+  }
+}
 
 const getClientById = async (clientId, companyId) => {
   const client = await Client.findOne({

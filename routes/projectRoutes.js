@@ -4,6 +4,8 @@ const projectController = require("../controllers/projectController");
 const authenticate = require("../middleware/authenticate");
 const validate = require("../middleware/validate");
 const validateQuery = require("../middleware/validateQuery");
+const brdUpload = require("../middleware/brdUpload");
+
 const {
   projectSchema,
   listProjectsQuerySchema,
@@ -37,12 +39,20 @@ router.get(
 router.post(
   "/",
   authenticate(["admin", "bde"]),
+  brdUpload.single("brdFile"),
+  (req, res, next) => {
+    console.log("CONTENT TYPE:", req.headers["content-type"]);
+    console.log("BODY AFTER MULTER:", req.body);
+    console.log("FILE AFTER MULTER:", req.file);
+    next();
+  },
   validate(projectSchema),
   projectController.createProject,
 );
 router.put(
   "/:uuid",
   authenticate(["admin", "bde"]),
+  brdUpload.single("brdFile"),
   validate(projectSchema),
   projectController.updateProject,
 );

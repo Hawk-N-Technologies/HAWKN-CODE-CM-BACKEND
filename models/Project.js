@@ -49,6 +49,12 @@ const Project = sequelize.define(
       },
     },
 
+    projectType: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      field: "project_type",
+    },
+
     startDate: {
       type: DataTypes.DATEONLY,
       allowNull: true,
@@ -74,6 +80,10 @@ const Project = sequelize.define(
         isIn: [
           [
             "Planning",
+            "Phase 1",
+            "Phase 2",
+            "Phase 3",
+            "Brd Approval",
             "In Development",
             "Testing",
             "Completed",
@@ -91,12 +101,28 @@ const Project = sequelize.define(
       validate: {
         min: 0,
         max: 100,
+        isInt: true,
       },
     },
 
     description: {
       type: DataTypes.TEXT,
       allowNull: true,
+    },
+
+    githubRepos: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "github_repos",
+    },
+
+    serverUrl: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "server_url",
+      validate: {
+        isUrl: true,
+      },
     },
   },
   {

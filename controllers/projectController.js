@@ -135,11 +135,18 @@ async function getProject(req, res, next) {
 // POST /api/admin/projects
 // --------------------------------------------------
 
+// --------------------------------------------------
+// Create Project
+// POST /api/admin/projects
+// --------------------------------------------------
+
 async function createProject(req, res, next) {
   try {
     const data = await projectService.createProject(
       req.user.companyId,
       req.body,
+      req.user.userId,
+      req.file,
     );
 
     return res.status(201).json({
@@ -150,9 +157,7 @@ async function createProject(req, res, next) {
   } catch (error) {
     return handleError(error, res, next, "Create project failed", req);
   }
-}
-
-// --------------------------------------------------
+} // --------------------------------------------------
 // Update Project
 // PUT /api/admin/projects/:uuid
 // --------------------------------------------------
@@ -169,6 +174,8 @@ async function updateProject(req, res, next) {
       req.params.uuid,
       req.user.companyId,
       req.body,
+      req.user.userId,
+      req.file,
     );
 
     return res.status(200).json({
@@ -180,7 +187,6 @@ async function updateProject(req, res, next) {
     return handleError(error, res, next, "Update project failed", req);
   }
 }
-
 // --------------------------------------------------
 // Delete Project
 // DELETE /api/admin/projects/:uuid
