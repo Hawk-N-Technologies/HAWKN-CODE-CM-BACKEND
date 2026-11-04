@@ -19,4 +19,6 @@ router.get(
   clientProjectPhasesController.getProjectPhases,
 );
 
+router.get("/", clientProjectController.listProjects);
+
 module.exports = router;
