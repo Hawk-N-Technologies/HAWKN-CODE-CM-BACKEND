@@ -10,6 +10,7 @@ const Employee = require("../models/Employee");
 const ProjectOperation = require("../models/ProjectOperation");
 const ProjectOperationDeveloper = require("../models/ProjectOperationDeveloper");
 const ProjectOperationTester = require("../models/ProjectOperationTester");
+const ProjectTask = require("../models/ProjectTask");
 
 const DIAGRAM_STATUSES = ["UPLOADED", "NOT_UPLOADED"];
 const PLANNING_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"];
@@ -451,6 +452,7 @@ async function saveOperationsPlan({
   });
 }
 
+
 async function getMyProjects(userId, companyId) {
   if (!userId || !companyId) {
     const error = new Error("Authenticated user and company are required.");
@@ -528,7 +530,60 @@ async function getMyProjects(userId, companyId) {
     order: [["updatedAt", "DESC"]],
   });
 
-  // 4. Convert operation plans to the response shape used by MyProjects.jsx.
+  // 4. Get all tasks belonging to the assigned projects.
+  // Project progress must represent the whole project, not just this
+  // developer's individually assigned tasks.
+  const projectIds = [
+    ...new Set(
+      operationPlans
+        .map((plan) => plan.project?.id)
+        .filter(Boolean)
+        .map(Number),
+    ),
+  ];
+
+  const projectTasks = projectIds.length
+    ? await ProjectTask.findAll({
+        where: {
+          projectId: {
+            [Op.in]: projectIds,
+          },
+        },
+        attributes: ["projectId", "status"],
+        raw: true,
+      })
+    : [];
+
+  // 5. Calculate task-based progress for each project.
+  // Done = 1 task unit, Testing = 0.5 task unit, other statuses = 0.
+  const taskStatsByProject = new Map();
+
+  for (const task of projectTasks) {
+    const projectId = Number(task.projectId);
+
+    if (!taskStatsByProject.has(projectId)) {
+      taskStatsByProject.set(projectId, {
+        totalTasks: 0,
+        completedTasks: 0,
+        testingTasks: 0,
+        weightedTasks: 0,
+      });
+    }
+
+    const stats = taskStatsByProject.get(projectId);
+
+    stats.totalTasks += 1;
+
+    if (task.status === "Done") {
+      stats.completedTasks += 1;
+      stats.weightedTasks += 1;
+    } else if (task.status === "Testing") {
+      stats.testingTasks += 1;
+      stats.weightedTasks += 0.5;
+    }
+  }
+
+  // 6. Convert operation plans into the response shape used by MyProjects.jsx.
   const uniqueProjects = new Map();
 
   for (const plan of operationPlans) {
@@ -548,6 +603,22 @@ async function getMyProjects(userId, companyId) {
     const deadline = project.deadline || null;
     const daysLeft = getDaysLeft(deadline);
 
+    const taskStats = taskStatsByProject.get(Number(project.id)) || {
+      totalTasks: 0,
+      completedTasks: 0,
+      testingTasks: 0,
+      weightedTasks: 0,
+    };
+
+    const progress = taskStats.totalTasks
+      ? Number(
+          (
+            (taskStats.weightedTasks / taskStats.totalTasks) *
+            100
+          ).toFixed(1),
+        )
+      : 0;
+
     uniqueProjects.set(String(project.id), {
       id: project.id,
       uuid: project.uuid,
@@ -558,7 +629,12 @@ async function getMyProjects(userId, companyId) {
       startDate: project.startDate || null,
       deadline,
       internalDeadline: project.internalDeadline || null,
-      progress: Number(project.progress || 0),
+
+      // Progress is calculated from all project tasks.
+      progress,
+      taskCount: taskStats.totalTasks,
+      completedTaskCount: taskStats.completedTasks,
+      testingTaskCount: taskStats.testingTasks,
 
       client: {
         name: clientName,
@@ -570,7 +646,6 @@ async function getMyProjects(userId, companyId) {
       isDueSoon: daysLeft !== null && daysLeft >= 0 && daysLeft <= 7,
       daysLeft,
 
-      // Optional metadata if you need it elsewhere in the UI.
       operationsPlanId: plan.id,
       assignmentRole:
         String(plan.projectLeadId) === String(employee.id)
@@ -581,6 +656,7 @@ async function getMyProjects(userId, companyId) {
 
   return [...uniqueProjects.values()];
 }
+
 
 // Compare calendar days without time-of-day or UTC time shifts.
 function getDaysLeft(dateValue) {
