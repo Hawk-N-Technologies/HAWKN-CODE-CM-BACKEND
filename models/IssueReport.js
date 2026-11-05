@@ -28,6 +28,14 @@ const IssueReport = sequelize.define(
       allowNull: true,
       field: "module_id",
     },
+    classification: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: "Bug",
+      validate: {
+        isIn: [["Bug", "Issue", "Change Request"]],
+      },
+    },
 
     reportedBy: {
       type: DataTypes.INTEGER,
@@ -68,14 +76,6 @@ const IssueReport = sequelize.define(
             "Rejected",
           ],
         ],
-      },
-    },
-
-    classification: {
-      type: DataTypes.STRING(20),
-      allowNull: true,
-      validate: {
-        isIn: [["Bug", "Feature Request"]],
       },
     },
 

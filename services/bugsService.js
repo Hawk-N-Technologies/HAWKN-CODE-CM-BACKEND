@@ -16,6 +16,7 @@ const { TIERS } = require("../validations/project.validation");
 const ProjectOperationTester = require("../models/ProjectOperationTester");
 const ProjectOperation = require("../models/ProjectOperation");
 const ProjectModule = require("../models/ProjectModule");
+const Client = require("../models/Client");
 const STATUSES = [
   "Open",
   "Assigned",
@@ -324,7 +325,6 @@ async function getReportedIssues(userId) {
         reportedBy: userId,
       },
     });
-
     return res;
   } catch (talha) {
     console.log(talha);
@@ -334,54 +334,45 @@ async function getReportedIssues(userId) {
 async function getIssuesForTester(userId) {
   try {
     const employee = await Employee.findOne({
-      where: {
-        userId,
-      },
-    });
-
-    if (!employee) {
-      return [];
-    }
-
-    const projectOperations = await ProjectOperationTester.findAll({
-      where: {
-        employee_id: employee.id,
-      },
-      attributes: ["projectOperationId"],
+      where: { userId },
+      attributes: ["id"],
       raw: true,
     });
 
-    if (!projectOperations.length) {
-      return [];
-    }
+    if (!employee) return [];
 
-    const projectOperationIds = projectOperations.map(
-      (item) => item.projectOperationId,
+    const issues = await sequelize.query(
+      `
+      SELECT
+        ir.*,
+        p.name AS "projectName",
+        pm.name AS "moduleName"
+
+      FROM issue_reports ir
+
+      INNER JOIN project_operation_testers pot
+        ON pot.employee_id = :employee_id
+
+      INNER JOIN project_operations po
+        ON po.id = pot.project_operation_id
+        AND po.project_id = ir.project_id
+
+      INNER JOIN projects p
+        ON p.id = ir.project_id
+
+      LEFT JOIN project_modules pm
+        ON pm.id = ir.module_id
+        AND pm.project_id = ir.project_id
+
+      ORDER BY ir.created_at DESC
+      `,
+      {
+        replacements: {
+          employee_id: employee.id,
+        },
+        type: QueryTypes.SELECT,
+      },
     );
-
-    const projects = await ProjectOperation.findAll({
-      where: {
-        id: {
-          [Op.in]: projectOperationIds,
-        },
-      },
-      attributes: ["projectId"],
-      raw: true,
-    });
-
-    if (!projects.length) {
-      return [];
-    }
-
-    const projectIds = [...new Set(projects.map((item) => item.projectId))];
-
-    const issues = await IssueReport.findAll({
-      where: {
-        projectId: {
-          [Op.in]: projectIds,
-        },
-      },
-    });
 
     return issues;
   } catch (error) {
@@ -686,6 +677,134 @@ async function updateBugByTester(uuid, data) {
   }
 }
 
+const createServiceError = (message, statusCode = 400) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+/**
+ * Get the authenticated client's active profile.
+ */
+const getClient = async (userId, companyId) => {
+  const client = await Client.findOne({
+    where: {
+      userId,
+      companyId,
+      isActive: true,
+    },
+    attributes: ["id"],
+  });
+
+  if (!client) {
+    throw createServiceError("Client account not found.", 404);
+  }
+
+  return client;
+};
+
+/**
+ * Create a ticket submitted by a client.
+ */
+const createIssueReport = async (user, payload) => {
+  const { userId, companyId } = user;
+
+  const {
+    projectId,
+    title,
+    description,
+    severity = "Medium",
+    classification = "Bug",
+  } = payload;
+
+  console.log(classification);
+
+  if (!projectId) {
+    throw createServiceError("Project is required.");
+  }
+
+  if (!title || !title.trim()) {
+    throw createServiceError("Ticket title is required.");
+  }
+
+  const allowedClassifications = ["Bug", "Issue", "Change Request"];
+
+  const allowedSeverities = ["Low", "Medium", "High", "Critical"];
+
+  if (!allowedClassifications.includes(classification)) {
+    throw createServiceError("Invalid ticket type.");
+  }
+
+  if (!allowedSeverities.includes(severity)) {
+    throw createServiceError("Invalid severity.");
+  }
+
+  const client = await getClient(userId, companyId);
+
+  // Ensure the project belongs to this client and company.
+  const project = await Project.findOne({
+    where: {
+      uuid: projectId,
+      clientId: client.id,
+      companyId,
+    },
+    attributes: ["id"],
+  });
+
+  if (!project) {
+    throw createServiceError(
+      "Project not found or you do not have access to it.",
+      404,
+    );
+  }
+
+  const issue = await IssueReport.create({
+    projectId: project.id,
+    title: title.trim(),
+    description: description?.trim() || null,
+    classification,
+    severity,
+    status: "Submitted",
+    reportedBy: userId,
+  });
+
+  return issue;
+};
+
+/**
+ * Get all tickets belonging to the authenticated client.
+ */
+const getClientIssueReports = async (user) => {
+  const { userId, companyId } = user;
+
+  const client = await getClient(userId, companyId);
+
+  const projects = await Project.findAll({
+    where: {
+      clientId: client.id,
+      companyId,
+    },
+    attributes: ["id"],
+  });
+
+  const projectIds = projects.map((project) => project.id);
+
+  if (!projectIds.length) {
+    return [];
+  }
+
+  const issues = await IssueReport.findAll({
+    where: {
+      projectId: {
+        [Op.in]: projectIds,
+      },
+    },
+    order: [["createdAt", "DESC"]],
+  });
+
+  return issues;
+};
+
 module.exports = {
   createBug,
   getProjectBugs,
@@ -703,4 +822,6 @@ module.exports = {
   getBugsInTester,
   updateBugByTester,
   updateStatusDEV,
+  createIssueReport,
+  getClientIssueReports,
 };
