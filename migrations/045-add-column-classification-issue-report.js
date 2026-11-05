@@ -4,17 +4,35 @@ module.exports = {
   async up(queryInterface, Sequelize) {
     const table = await queryInterface.describeTable("issue_reports");
 
-    if (table.classification) {
-      console.log("classification column already exists");
-      return;
+    // Add classification column if not exists
+    if (!table.classification) {
+      await queryInterface.addColumn("issue_reports", "classification", {
+        type: Sequelize.STRING(20),
+        allowNull: false,
+        defaultValue: "Bug",
+      });
     }
 
-    await queryInterface.addColumn("issue_reports", "classification", {
-      type: Sequelize.STRING(20),
-      allowNull: false,
-      defaultValue: "Bug",
-    });
+    // Add status column if not exists
+    if (!table.status) {
+      await queryInterface.addColumn("issue_reports", "status", {
+        type: Sequelize.STRING(30),
+        allowNull: false,
+        defaultValue: "Submitted",
+      });
+    }
 
+    // Drop existing classification constraint
+    try {
+      await queryInterface.removeConstraint(
+        "issue_reports",
+        "chk_issue_reports_classification",
+      );
+    } catch (error) {
+      console.log("Classification constraint does not exist");
+    }
+
+    // Recreate classification constraint
     await queryInterface.addConstraint("issue_reports", {
       fields: ["classification"],
       type: "check",
@@ -24,22 +42,68 @@ module.exports = {
       name: "chk_issue_reports_classification",
     });
 
-    console.log("classification column added successfully");
+    // Drop existing status constraint
+    try {
+      await queryInterface.removeConstraint(
+        "issue_reports",
+        "chk_issue_reports_status",
+      );
+    } catch (error) {
+      console.log("Status constraint does not exist");
+    }
+
+    // Recreate status constraint
+    await queryInterface.addConstraint("issue_reports", {
+      fields: ["status"],
+      type: "check",
+      where: {
+        status: [
+          "Submitted",
+          "Under Review",
+          "Confirmed",
+          "Feature Request",
+          "Rejected",
+          "Solved",
+        ],
+      },
+      name: "chk_issue_reports_status",
+    });
+
+    console.log("Classification and status constraints created successfully");
   },
 
   async down(queryInterface) {
     const table = await queryInterface.describeTable("issue_reports");
 
-    if (!table.classification) {
-      console.log("classification column does not exist");
-      return;
+    // Remove classification constraint
+    try {
+      await queryInterface.removeConstraint(
+        "issue_reports",
+        "chk_issue_reports_classification",
+      );
+    } catch (error) {
+      console.log("Classification constraint does not exist");
     }
 
-    await queryInterface.removeConstraint(
-      "issue_reports",
-      "chk_issue_reports_classification",
-    );
+    // Remove status constraint
+    try {
+      await queryInterface.removeConstraint(
+        "issue_reports",
+        "chk_issue_reports_status",
+      );
+    } catch (error) {
+      console.log("Status constraint does not exist");
+    }
 
-    await queryInterface.removeColumn("issue_reports", "classification");
+    // Remove columns if they exist
+    if (table.classification) {
+      await queryInterface.removeColumn("issue_reports", "classification");
+    }
+
+    if (table.status) {
+      await queryInterface.removeColumn("issue_reports", "status");
+    }
+
+    console.log("Classification and status constraints/columns removed");
   },
 };

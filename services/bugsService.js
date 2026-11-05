@@ -764,7 +764,7 @@ const createIssueReport = async (user, payload) => {
     description: description?.trim() || null,
     classification,
     severity,
-    status: "Submitted",
+    status: "Under Review",
     reportedBy: userId,
   });
 
