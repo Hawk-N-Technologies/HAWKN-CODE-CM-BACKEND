@@ -8,21 +8,37 @@ module.exports = {
       throw new Error("Projects table does not exist");
     }
 
-    // Add new project fields
-    await queryInterface.addColumn("projects", "project_type", {
-      type: Sequelize.STRING(100),
-      allowNull: true,
-    });
+    const table = await queryInterface.describeTable("projects");
 
-    await queryInterface.addColumn("projects", "github_repos", {
-      type: Sequelize.TEXT,
-      allowNull: true,
-    });
+    // Add project_type if not exists
+    if (!table.project_type) {
+      await queryInterface.addColumn("projects", "project_type", {
+        type: Sequelize.STRING(100),
+        allowNull: true,
+      });
+    } else {
+      console.log("project_type column already exists");
+    }
 
-    await queryInterface.addColumn("projects", "server_url", {
-      type: Sequelize.TEXT,
-      allowNull: true,
-    });
+    // Add github_repos if not exists
+    if (!table.github_repos) {
+      await queryInterface.addColumn("projects", "github_repos", {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      });
+    } else {
+      console.log("github_repos column already exists");
+    }
+
+    // Add server_url if not exists
+    if (!table.server_url) {
+      await queryInterface.addColumn("projects", "server_url", {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      });
+    } else {
+      console.log("server_url column already exists");
+    }
 
     // Replace existing status CHECK constraint
     await queryInterface.sequelize.query(`
@@ -49,6 +65,14 @@ module.exports = {
   },
 
   async down(queryInterface) {
+    const tableExists = await queryInterface.tableExists("projects");
+
+    if (!tableExists) {
+      return;
+    }
+
+    const table = await queryInterface.describeTable("projects");
+
     // Restore previous status CHECK constraint
     await queryInterface.sequelize.query(`
       ALTER TABLE "projects"
@@ -68,9 +92,17 @@ module.exports = {
       );
     `);
 
-    // Remove newly added columns
-    await queryInterface.removeColumn("projects", "server_url");
-    await queryInterface.removeColumn("projects", "github_repos");
-    await queryInterface.removeColumn("projects", "project_type");
+    // Remove columns only if they exist
+    if (table.server_url) {
+      await queryInterface.removeColumn("projects", "server_url");
+    }
+
+    if (table.github_repos) {
+      await queryInterface.removeColumn("projects", "github_repos");
+    }
+
+    if (table.project_type) {
+      await queryInterface.removeColumn("projects", "project_type");
+    }
   },
 };

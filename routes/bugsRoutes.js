@@ -10,6 +10,13 @@ router.post(
   authMiddleware(["client", "tester"]),
   bugController.reportBug,
 );
+
+router.post(
+  "/issue-report",
+  authMiddleware(["client"]),
+  bugController.createIssueReport,
+);
+
 router.post(
   "/createBug",
   authMiddleware(["developer"]),

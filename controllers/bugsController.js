@@ -510,6 +510,58 @@ async function updateBugByTester(req, res) {
     });
   }
 }
+
+/**
+ * POST /api/bugs
+ * Create a client ticket.
+ */
+const createIssueReport = async (req, res) => {
+  try {
+
+    const issue = await bugsService.createIssueReport(req.user, req.body);
+
+    return res.status(201).json({
+      success: true,
+      message: "Ticket submitted successfully.",
+      data: {
+        issue,
+      },
+    });
+  } catch (error) {
+    console.error("Create issue report error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to submit ticket.",
+    });
+  }
+};
+
+/**
+ * GET /api/bugs/issued-bugs
+ * Get tickets belonging to the authenticated client.
+ */
+const getClientIssueReports = async (req, res) => {
+  try {
+    const issues = await bugsService.getClientIssueReports(req.user);
+
+    return res.status(200).json({
+      success: true,
+      message: "Issue reports fetched successfully.",
+      data: {
+        issues,
+      },
+    });
+  } catch (error) {
+    console.error("Get client issue reports error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to fetch issue reports.",
+    });
+  }
+};
+
 module.exports = {
   reportBug,
   fetchProjectBugs,
@@ -524,4 +576,6 @@ module.exports = {
   createBugByTester,
   getBugsInTester,
   updateBugByTester,
+  createIssueReport,
+  getClientIssueReports,
 };
