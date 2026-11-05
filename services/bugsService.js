@@ -401,9 +401,15 @@ async function updateStatus(uuid, status, classification) {
       "Confirmed",
       "Feature Request",
       "Rejected",
+      "Solved",
     ];
 
-    const CLASSIFICATIONS = ["Bug", "Feature Request"];
+    const CLASSIFICATIONS = [
+      "Bug",
+      "Feature Request",
+      "Issue",
+      "Change Request",
+    ];
 
     if (!STATUSES.includes(status)) {
       const error = new Error("Invalid issue status.");
