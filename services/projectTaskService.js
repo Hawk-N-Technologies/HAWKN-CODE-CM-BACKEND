@@ -22,6 +22,7 @@ const ProjectOperation = require("../models/ProjectOperation");
 const ProjectOperationTester = require("../models/ProjectOperationTester");
 const TaskTesting = require("../models/TaskTesting");
 const TaskTester = require("../models/TaskTester");
+const notificationService = require("./notificationService");
 const TASK_FIELDS = [
   "title",
   "description",
@@ -205,6 +206,46 @@ const buildTaskValues = (body) => {
   return values;
 };
 
+const notifyDeveloperTaskAssigned = async ({
+  project,
+  employeeId,
+  task,
+  eventKey,
+}) => {
+  if (!project?.companyId || !employeeId || !task) return;
+
+  try {
+    const employee = await Employee.findOne({
+      where: {
+        id: employeeId,
+        companyId: project.companyId,
+      },
+      attributes: ["id", "userId"],
+    });
+
+    if (!employee?.userId) return;
+
+    await notificationService.notifyUser({
+      companyId: project.companyId,
+      userId: employee.userId,
+      type: "TASK_ASSIGNED",
+      title: "New task assigned",
+      message: `You have been assigned the task "${task.title}" in project "${project.name}".`,
+      link: "/developer/tasks",
+      eventKey,
+      metadata: {
+        taskId: task.id,
+        taskUuid: task.uuid,
+        projectId: project.id,
+        projectName: project.name,
+      },
+    });
+  } catch (error) {
+    // Notification failure must not undo a successfully saved task.
+    console.error("Failed to send developer task notification:", error);
+  }
+};
+
 const createTask = async (projectUuid, body, userId) => {
   const project = await getProject(projectUuid);
   const values = buildTaskValues(body);
@@ -241,7 +282,17 @@ const createTask = async (projectUuid, body, userId) => {
   values.projectId = project.id;
   values.createdBy = userId || null;
 
-  return ProjectTask.create(values);
+  const task = await ProjectTask.create(values);
+
+  if (task.assignedTo) {
+    await notifyDeveloperTaskAssigned({
+      project,
+      employeeId: task.assignedTo,
+      task,
+      eventKey: `task-assigned-${task.id}-${task.assignedTo}`,
+    });
+  }
+return task;
 };
 
 const listProjectTasks = async (projectUuid, filters = {}) => {
@@ -450,6 +501,7 @@ const updateTask = async (uuid, body) => {
     const values = buildTaskValues(body);
 
     const previousStatus = task.status;
+    const previousAssignee = task.assignedTo;
 
     const nextStatus = hasOwn(values, "status")
       ? values.status
@@ -594,7 +646,24 @@ const updateTask = async (uuid, body) => {
 
     await transaction.commit();
 
-    return task;
+    if (
+  hasOwn(values, "assignedTo") &&
+  values.assignedTo &&
+  Number(values.assignedTo) !== Number(previousAssignee)
+) {
+  const project = await Project.findByPk(task.projectId, {
+    attributes: ["id", "companyId", "name"],
+  });
+
+  await notifyDeveloperTaskAssigned({
+    project,
+    employeeId: values.assignedTo,
+    task,
+    eventKey: `task-reassigned-${task.id}-${values.assignedTo}-${Date.now()}`,
+  });
+}
+
+return task;
   } catch (error) {
     if (!transaction.finished) {
       await transaction.rollback();
