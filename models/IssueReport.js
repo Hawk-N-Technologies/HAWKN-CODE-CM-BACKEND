@@ -74,6 +74,7 @@ const IssueReport = sequelize.define(
             "Confirmed",
             "Feature Request",
             "Rejected",
+            "Solved",
           ],
         ],
       },
