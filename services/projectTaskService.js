@@ -292,7 +292,7 @@ const createTask = async (projectUuid, body, userId) => {
       eventKey: `task-assigned-${task.id}-${task.assignedTo}`,
     });
   }
-return task;
+  return task;
 };
 
 const listProjectTasks = async (projectUuid, filters = {}) => {
@@ -335,7 +335,7 @@ const listProjectTasks = async (projectUuid, filters = {}) => {
     where.isBlocked = String(filters.isBlocked) === "true";
   }
 
-  return ProjectTask.findAll({
+  const tasks = await ProjectTask.findAll({
     where,
     include: [
       {
@@ -381,6 +381,14 @@ const listProjectTasks = async (projectUuid, filters = {}) => {
       ["createdAt", "DESC"],
     ],
   });
+
+  console.log(tasks);
+  console.log(project.uuid);
+
+  return tasks.map((task) => ({
+    ...task.toJSON(),
+    projectUuid,
+  }));
 };
 
 const listModuleTasks = async (projectUuid, moduleUuid, filters = {}) => {
@@ -647,23 +655,23 @@ const updateTask = async (uuid, body) => {
     await transaction.commit();
 
     if (
-  hasOwn(values, "assignedTo") &&
-  values.assignedTo &&
-  Number(values.assignedTo) !== Number(previousAssignee)
-) {
-  const project = await Project.findByPk(task.projectId, {
-    attributes: ["id", "companyId", "name"],
-  });
+      hasOwn(values, "assignedTo") &&
+      values.assignedTo &&
+      Number(values.assignedTo) !== Number(previousAssignee)
+    ) {
+      const project = await Project.findByPk(task.projectId, {
+        attributes: ["id", "companyId", "name"],
+      });
 
-  await notifyDeveloperTaskAssigned({
-    project,
-    employeeId: values.assignedTo,
-    task,
-    eventKey: `task-reassigned-${task.id}-${values.assignedTo}-${Date.now()}`,
-  });
-}
+      await notifyDeveloperTaskAssigned({
+        project,
+        employeeId: values.assignedTo,
+        task,
+        eventKey: `task-reassigned-${task.id}-${values.assignedTo}-${Date.now()}`,
+      });
+    }
 
-return task;
+    return task;
   } catch (error) {
     if (!transaction.finished) {
       await transaction.rollback();
