@@ -1,0 +1,155 @@
+const express = require("express");
+const cors = require("cors");
+require("dotenv").config();
+const sequelize = require("./config/db");
+const { Sequelize } = require("@sequelize/core");
+
+const companyRoutes = require("./routes/companyRoutes");
+const errorHandler = require("./middleware/errorHandler");
+const cookieParser = require("cookie-parser");
+const companyProfileRoutes = require("./routes/companyProfileRoutes");
+const companyPolicyRoutes = require("./routes/companyPolicyRoutes");
+const companyRolesResponsibilitiesRoutes = require("./routes/companyRolesResponsibilitiesRoutes");
+const employeeHierarchyRoutes = require("./routes/employeeHierarchyRoutes");
+const authRoutes = require("./routes/authRoutes");
+const employeeRoutes = require("./routes/employeeRoutes");
+const attendanceRoutes = require("./routes/attendanceRoutes");
+const payrollRoutes = require("./routes/payrollRoutes");
+const employeeOnboardingRoutes = require("./routes/employeeOnboardingRoutes");
+const companyHolidayRoutes = require("./routes/companyHolidayRoutes");
+const employeeLeaveRoutes = require("./routes/employeeLeaveRoutes");
+const bonusRoutes = require("./routes/bonusRoutes");
+const incrementRoutes = require("./routes/incrementRoutes");
+const internshipProbationRoutes = require("./routes/internshipProbationRoutes");
+const adminHrmsRoutes = require("./routes/adminHrmsRoutes");
+const clientRoutes = require("./routes/clientRoutes");
+const projectRoutes = require("./routes/projectRoutes");
+const brdRoutes = require("./routes/brdRoutes");
+const path = require("path");
+const developerProjectRoutes = require("./routes/developerProjectRoutes");
+const operationsRoutes = require("./routes/operationsRoutes");
+const deploymentRoutes = require("./routes/deploymentRoutes");
+const clientProjectRoutes = require("./routes/clientProjectRoutes");
+const projectLeadPlanningRoutes = require("./routes/projectLeadPlanningRoutes");
+const hrDashboardRoutes = require("./routes/hrDashboardRoutes");
+const projectModuleRoutes = require("./routes/projectModuleRoutes");
+const projectPhaseRoutes = require("./routes/projectPhaseRoutes");
+const projectTaskRoutes = require("./routes/projectTaskRoutes");
+const projectLeadTechStackRoutes = require("./routes/projectLeadTechStackRoutes");
+const projectLeadTeamRoutes = require("./routes/projectLeadTeamRoutes");
+const kanbanRoutes = require("./routes/kanbanRoutes");
+const testerDashboardRoutes = require("./routes/testerDashboardRoutes");
+const taskTestingRoutes = require("./routes/taskTestingRoutes");
+const bugsRoutes = require("./routes/bugsRoutes");
+const developerTestingRoutes = require("./routes/developerTestingRoutes");
+const adminOverviewRoutes = require("./routes/adminOverviewRoutes");
+const http = require("http");
+const notificationRoutes = require("./routes/notificationRoutes");
+const manualAttendanceRoutes = require("./routes/manualAttendanceRoutes");
+const { initializeNotificationSocket } = require("./utils/notificationSocket");
+const User = require("./models/User");
+
+require("./models/associations");
+// const tempCompanyContext = require("./middlewares/tempCompanyContext");
+const app = express();
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://clientportal.hawkntechnologies.com",
+    ],
+  }),
+);
+
+app.use(express.json());
+app.use(cookieParser());
+// app.use(tempCompanyContext);
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    message: "Server started running......",
+  });
+});
+
+app.use("/api/companies", companyRoutes);
+app.use("/api/company", companyProfileRoutes);
+app.use("/api/company", companyPolicyRoutes);
+app.use("/api/company", companyRolesResponsibilitiesRoutes);
+app.use("/api/company", employeeHierarchyRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/employees", employeeRoutes);
+app.use("/api/attendance", attendanceRoutes);
+app.use("/api/payroll", payrollRoutes);
+app.use("/api/onboarding", employeeOnboardingRoutes);
+app.use("/api/company", companyHolidayRoutes);
+app.use("/api/leave", employeeLeaveRoutes);
+app.use("/api/bonuses", bonusRoutes);
+app.use("/api/increments", incrementRoutes);
+app.use("/api/internship-probation", internshipProbationRoutes);
+app.use("/api/admin/hrms", adminHrmsRoutes);
+app.use("/api/clients", clientRoutes);
+app.use("/api/admin/projects", projectRoutes);
+app.use("/api/brds", brdRoutes);
+app.use("/api/developer/projects", developerProjectRoutes);
+app.use("/api/operations", operationsRoutes);
+app.use("/api/admin/deployments", deploymentRoutes);
+app.use("/api/client/projects", clientProjectRoutes);
+app.use("/api/project-lead/planning", projectLeadPlanningRoutes);
+app.use("/api/hr/dashboard", hrDashboardRoutes);
+app.use("/api", projectTaskRoutes);
+app.use("/api/project-lead/tech-stack", projectLeadTechStackRoutes);
+app.use("/api/project-lead/team", projectLeadTeamRoutes);
+app.use("/api", projectModuleRoutes);
+app.use("/api", projectPhaseRoutes);
+app.use("/api", projectTaskRoutes);
+app.use("/api/kanban", kanbanRoutes);
+app.use("/api/tester", testerDashboardRoutes);
+app.use("/api/task-testing", taskTestingRoutes);
+app.use("/api/bugs", bugsRoutes);
+app.use("/api/developer/testing", developerTestingRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminOverviewRoutes);
+app.use("/api/attendance/manual", manualAttendanceRoutes);
+app.use(errorHandler);
+
+const PORT = process.env.PORT || 3000;
+const httpServer = http.createServer(app);
+
+initializeNotificationSocket(httpServer);
+
+async function startServer() {
+  try {
+    await sequelize.authenticate();
+
+    console.log("PostgreSQL connected successfully");
+
+    httpServer.listen(PORT, () => {
+      console.log(`Server started on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Database connection failed:", error.message);
+    process.exit(1);
+  }
+}
+
+async function alterEmployeeTable() {
+  try {
+    await sequelize.authenticate();
+
+    console.log("PostgreSQL connected successfully");
+
+    await sequelize
+      .getQueryInterface()
+      .changeColumn("employees", "aadhaar_last4", {
+        type: Sequelize.STRING(12),
+        allowNull: true, // Keep consistent with your existing schema
+      });
+
+    console.log("employee.aadhar_last4 altered successfully");
+  } catch (error) {
+    console.error("Failed to alter employee table:", error.message);
+    process.exit(1);
+  }
+}
+
+startServer();
