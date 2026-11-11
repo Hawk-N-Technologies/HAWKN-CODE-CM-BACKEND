@@ -263,6 +263,13 @@ async function saveTeam(projectUuid, userId, companyId, payload) {
 
       await plan.update({ projectLeadId, updatedBy: userId }, { transaction });
 
+      // Keep ONE lead per project: the project's lead must match the plan's
+      // (Admin → Project Management shows projects.project_lead_id)
+      await Project.update(
+        { projectLeadId },
+        { where: { id: plan.projectId, companyId }, transaction },
+      );
+
       await ProjectOperationDeveloper.destroy({
         where: { projectOperationId: plan.id },
         transaction,

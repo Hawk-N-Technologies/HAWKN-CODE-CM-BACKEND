@@ -2,12 +2,21 @@ const projectModuleController = require("../controllers/projectModuleController"
 const authenticate = require("../middleware/authenticate");
 const express = require("express");
 const router = express.Router();
-const { requireProjectLead } = require("../middleware/requireProjectLead");
+const ProjectModule = require("../models/ProjectModule");
+const {
+  projectFrom,
+  requireProjectAccess,
+  requireLeadOfProject,
+} = require("../middleware/projectAccess");
+
+// Every route checks the project is in the user's company.
+// Writes also require being the lead of THIS project.
 
 // Get all modules for a project
 router.get(
   "/projects/:projectUuid/modules",
   authenticate(["hr", "developer", "tester", "bde", "client"]),
+  requireProjectAccess(projectFrom.param("projectUuid")),
   projectModuleController.getModulesByProject,
 );
 
@@ -15,7 +24,7 @@ router.get(
 router.post(
   "/projects/:projectUuid/modules",
   authenticate(["developer"]),
-  requireProjectLead,
+  requireLeadOfProject(projectFrom.param("projectUuid")),
   projectModuleController.createModule,
 );
 
@@ -23,6 +32,7 @@ router.post(
 router.get(
   "/modules/:uuid",
   authenticate(["hr", "developer", "tester", "bde"]),
+  requireProjectAccess(projectFrom.child(ProjectModule, "uuid")),
   projectModuleController.getModule,
 );
 
@@ -30,7 +40,7 @@ router.get(
 router.put(
   "/modules/:uuid",
   authenticate(["developer"]),
-  requireProjectLead,
+  requireLeadOfProject(projectFrom.child(ProjectModule, "uuid")),
   projectModuleController.updateModule,
 );
 
@@ -38,7 +48,7 @@ router.put(
 router.delete(
   "/modules/:uuid",
   authenticate(["developer"]),
-  requireProjectLead,
+  requireLeadOfProject(projectFrom.child(ProjectModule, "uuid")),
   projectModuleController.deleteModule,
 );
 

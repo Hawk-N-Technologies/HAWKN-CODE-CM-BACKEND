@@ -170,7 +170,7 @@ const validateModuleAndPhase = async ({ projectId, moduleId, phaseId }) => {
   return { projectModule, projectPhase };
 };
 
-const validateAssignment = async (assignedTo) => {
+const validateAssignment = async (assignedTo, companyId) => {
   if (assignedTo === undefined || assignedTo === null) {
     return;
   }
@@ -179,7 +179,11 @@ const validateAssignment = async (assignedTo) => {
     throw new Error("assignedTo must be a valid employee ID");
   }
 
-  const employee = await Employee.findByPk(assignedTo);
+  // Only an employee of the SAME company as the project can be assigned
+  const employee = await Employee.findOne({
+    where: { id: Number(assignedTo), companyId },
+    attributes: ["id"],
+  });
 
   if (!employee) {
     throw new Error("Assigned employee not found");
@@ -263,7 +267,7 @@ const createTask = async (projectUuid, body, userId) => {
     phaseId: values.phaseId,
   });
 
-  await validateAssignment(values.assignedTo);
+  await validateAssignment(values.assignedTo, project.companyId);
 
   if (values.isBlocked === undefined) {
     values.isBlocked = false;
@@ -566,7 +570,13 @@ const updateTask = async (uuid, body) => {
     }
 
     if (hasOwn(values, "assignedTo")) {
-      await validateAssignment(values.assignedTo);
+      const taskProject = await Project.findOne({
+        where: { id: task.projectId },
+        attributes: ["companyId"],
+        transaction,
+      });
+
+      await validateAssignment(values.assignedTo, taskProject?.companyId);
     }
 
     if (values.isBlocked === true) {
@@ -904,14 +914,23 @@ async function updateMyTaskStatus(taskUuid, userId, companyId, status) {
 
 async function taskDropdown(phaseId) {
   try {
+    // Company access is checked by the route (requireProjectAccess)
     const phase = await ProjectPhase.findOne({
       where: {
         uuid: phaseId,
       },
+      attributes: ["id"],
     });
+
+    if (!phase) {
+      const error = new Error("Phase not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
     const tasks = await ProjectTask.findAll({
       where: {
-        id: phase.id,
+        phaseId: phase.id,
       },
       attributes: ["id", "uuid", "title"],
       order: [["title", "ASC"]],
