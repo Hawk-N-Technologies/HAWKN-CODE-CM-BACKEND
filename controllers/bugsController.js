@@ -1,6 +1,7 @@
 "use strict";
 
 const bugsService = require("../services/bugsService");
+const logger = require("../utils/logger");
 
 const SEVERITIES = ["Low", "Medium", "High", "Critical"];
 
@@ -98,7 +99,7 @@ async function reportBug(req, res) {
       data: bug,
     });
   } catch (error) {
-    console.error("Report bug error:", error);
+    logger.error("Report bug error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -156,7 +157,7 @@ async function fetchProjectBugs(req, res) {
       data: bugs,
     });
   } catch (error) {
-    console.error("Fetch bugs error:", error);
+    logger.error("Fetch bugs error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -188,7 +189,7 @@ async function getDevelopers(req, res) {
       data: developers,
     });
   } catch (error) {
-    console.error("Fetch developers error:", error);
+    logger.error("Fetch developers error", { error: error?.message, stack: error?.stack });
 
     return res.status(500).json({
       success: false,
@@ -283,7 +284,7 @@ async function updateProjectBug(req, res) {
       data: bug,
     });
   } catch (error) {
-    console.error("Update bug error:", error);
+    logger.error("Update bug error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -313,7 +314,7 @@ async function fetchAssignedBugs(req, res) {
 
     const bugs = await bugsService.getAssignedBugs(
       employeeId,
-      Number(projectId),
+      projectId,
       req.user.companyId
     );
 
@@ -324,11 +325,14 @@ async function fetchAssignedBugs(req, res) {
       data: bugs,
     });
   } catch (error) {
-    console.error("Fetch assigned bugs error:", error);
+    logger.error("Fetch assigned bugs error", { error: error?.message, stack: error?.stack });
 
-    return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.statusCode && error.statusCode < 500 ? error.message : "Failed to fetch assigned bugs.",
+      message:
+        error.statusCode && error.statusCode < 500
+          ? error.message
+          : "Failed to fetch assigned bugs.",
     });
   }
 }
@@ -343,7 +347,7 @@ async function projectsDropdown(req, res) {
       data,
     });
   } catch (error) {
-    console.error("Client projects dropdown error:", error);
+    logger.error("Client projects dropdown error", { error: error?.message, stack: error?.stack });
 
     return res.status(500).json({
       success: false,
@@ -365,7 +369,7 @@ async function updateBugStatus(req, res) {
       data: bug,
     });
   } catch (error) {
-    console.error("Update bug status error:", error);
+    logger.error("Update bug status error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -386,7 +390,7 @@ async function getReportedIssues(req, res) {
       data: data,
     });
   } catch (talha) {
-    console.error("Update bug status error:", talha);
+    logger.error("Update bug status error", { error: talha?.message, stack: talha?.stack });
 
     return res.status(talha.statusCode || 500).json({
       success: false,
@@ -408,7 +412,7 @@ async function getIssuesForTester(req, res) {
       data: data,
     });
   } catch (error) {
-    console.error("Get issues for tester error:", error);
+    logger.error("Get issues for tester error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -433,7 +437,7 @@ async function updateIssueStatus(req, res) {
       data,
     });
   } catch (error) {
-    console.error("Update issue status error:", error);
+    logger.error("Update issue status error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -455,7 +459,7 @@ async function createBugByTester(req, res) {
       data,
     });
   } catch (talha) {
-    console.error("Create bug controller error:", talha);
+    logger.error("Create bug controller error", { error: talha?.message, stack: talha?.stack });
 
     return res.status(talha.statusCode || 500).json({
       success: false,
@@ -477,7 +481,7 @@ async function getBugsInTester(req, res) {
       data,
     });
   } catch (talha) {
-    console.error("Get bugs for tester error:", talha);
+    logger.error("Get bugs for tester error", { error: talha?.message, stack: talha?.stack });
 
     return res.status(talha.statusCode || 500).json({
       success: false,
@@ -500,7 +504,7 @@ async function updateBugByTester(req, res) {
       data,
     });
   } catch (talha) {
-    console.error("Update bug by tester error:", talha);
+    logger.error("Update bug by tester error", { error: talha?.message, stack: talha?.stack });
 
     return res.status(talha.statusCode || 500).json({
       success: false,
@@ -529,7 +533,7 @@ const createIssueReport = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create issue report error:", error);
+    logger.error("Create issue report error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -554,7 +558,7 @@ const getClientIssueReports = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get client issue reports error:", error);
+    logger.error("Get client issue reports error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,

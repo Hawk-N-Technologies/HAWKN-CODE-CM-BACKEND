@@ -86,8 +86,6 @@ async function saveOperationsPlan(req, res, next) {
       flowchartStatus,
     } = req.body;
 
-    console.log(req.body);
-
     const plan = await operationsService.saveOperationsPlan({
       brdUuid,
       companyId,

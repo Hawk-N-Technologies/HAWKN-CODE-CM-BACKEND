@@ -23,6 +23,9 @@ const ProjectOperationTester = require("../models/ProjectOperationTester");
 const TaskTesting = require("../models/TaskTesting");
 const TaskTester = require("../models/TaskTester");
 const notificationService = require("./notificationService");
+const logger = require("../utils/logger");
+// Safety cap for lists that keep growing (until they get real pagination)
+const MAX_LIST_ROWS = 1000;
 const TASK_FIELDS = [
   "title",
   "description",
@@ -186,7 +189,7 @@ const validateAssignment = async (assignedTo, companyId) => {
   });
 
   if (!employee) {
-    throw new Error("Assigned employee not found");
+    throw new Error("Assigned employee must belong to this project's company");
   }
 };
 
@@ -246,7 +249,7 @@ const notifyDeveloperTaskAssigned = async ({
     });
   } catch (error) {
     // Notification failure must not undo a successfully saved task.
-    console.error("Failed to send developer task notification:", error);
+    logger.error("Failed to send developer task notification", { error: error?.message, stack: error?.stack });
   }
 };
 
@@ -341,6 +344,7 @@ const listProjectTasks = async (projectUuid, filters = {}) => {
 
   const tasks = await ProjectTask.findAll({
     where,
+    limit: MAX_LIST_ROWS,
     include: [
       {
         model: TaskTester,
@@ -385,9 +389,6 @@ const listProjectTasks = async (projectUuid, filters = {}) => {
       ["createdAt", "DESC"],
     ],
   });
-
-  console.log(tasks);
-  console.log(project.uuid);
 
   return tasks.map((task) => ({
     ...task.toJSON(),
@@ -750,6 +751,7 @@ async function getMyTasks(userId, companyId) {
     where: {
       assignedTo: employeeId,
     },
+    limit: MAX_LIST_ROWS,
     include: [
       {
         model: Project,
@@ -934,6 +936,7 @@ async function taskDropdown(phaseId) {
       },
       attributes: ["id", "uuid", "title"],
       order: [["title", "ASC"]],
+      limit: MAX_LIST_ROWS,
     });
 
     return tasks.map((task) => ({
@@ -942,7 +945,7 @@ async function taskDropdown(phaseId) {
       name: task.title,
     }));
   } catch (error) {
-    console.error("Task dropdown service error:", error);
+    logger.error("Task dropdown service error", { error: error?.message, stack: error?.stack });
     throw error;
   }
 }

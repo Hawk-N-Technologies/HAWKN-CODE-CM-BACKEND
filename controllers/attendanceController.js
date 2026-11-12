@@ -1,4 +1,5 @@
 const attendanceService = require("../services/attendanceService");
+const logger = require("../utils/logger");
 
 async function markAttendance(req, res) {
   try {
@@ -55,9 +56,6 @@ async function getAttendanceHistory(req, res) {
       employeeId: req.query.employeeId,
     });
 
-    console.log("CONTROLLER RECORDS:", result.records.length);
-    console.log("CONTROLLER PAGINATION:", result.pagination);
-
     return res.status(200).json({
       success: true,
       message: "Attendance history fetched successfully.",
@@ -66,7 +64,7 @@ async function getAttendanceHistory(req, res) {
       filters: result.filters,
     });
   } catch (error) {
-    console.error("Get attendance history error:", error);
+    logger.error("Get attendance history error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -99,7 +97,7 @@ const getMyMonthlyAttendance = async (req, res, next) => {
       data: result,
     });
   } catch (error) {
-    console.error("Failed to fetch employee monthly attendance:", error);
+    logger.error("Failed to fetch employee monthly attendance", { error: error?.message, stack: error?.stack });
 
     return next(error);
   }

@@ -17,6 +17,7 @@ const ProjectOperationDeveloper = require("../models/ProjectOperationDeveloper")
 const ProjectOperation = require("../models/ProjectOperation");
 const ProjectModule = require("../models/ProjectModule");
 const Client = require("../models/Client");
+const logger = require("../utils/logger");
 const {
   refWhere,
   findCompanyProject,
@@ -24,6 +25,8 @@ const {
   isLeadOfProject,
   isClientOfProject,
 } = require("../middleware/projectAccess");
+// Safety cap for lists that keep growing (until they get real pagination)
+const MAX_LIST_ROWS = 1000;
 
 const STATUSES = [
   "Open",
@@ -366,6 +369,7 @@ async function getProjectBugs(projectId, filters = {}, companyId) {
   return ProjectBug.findAll({
     where,
     order: [["createdAt", "DESC"]],
+    limit: MAX_LIST_ROWS,
   });
 }
 
@@ -548,6 +552,7 @@ async function getAssignedBugs(userId, projectId, companyId) {
       projectId: project.id,
     },
     order: [["createdAt", "DESC"]],
+    limit: MAX_LIST_ROWS,
   });
 }
 
@@ -683,6 +688,8 @@ async function getReportedIssues(userId) {
     where: {
       reportedBy: userId,
     },
+    order: [["createdAt", "DESC"]],
+    limit: MAX_LIST_ROWS,
   });
 }
 
@@ -722,11 +729,13 @@ async function getIssuesForTester(userId, companyId) {
         AND pm.project_id = ir.project_id
 
       ORDER BY ir.created_at DESC
+      LIMIT :max_rows
       `,
       {
         replacements: {
           employee_id: employee.id,
           company_id: companyId,
+          max_rows: MAX_LIST_ROWS,
         },
         type: QueryTypes.SELECT,
       },
@@ -734,7 +743,7 @@ async function getIssuesForTester(userId, companyId) {
 
     return issues;
   } catch (error) {
-    console.error("Error fetching issues for tester:", error);
+    logger.error("Error fetching issues for tester", { error: error?.message, stack: error?.stack });
     throw error;
   }
 }
@@ -861,6 +870,8 @@ async function getBugsInTester(userId, companyId) {
         [Op.in]: projectIds,
       },
     },
+    order: [["createdAt", "DESC"]],
+    limit: MAX_LIST_ROWS,
     include: [
       {
         model: Project,
@@ -1126,6 +1137,7 @@ const getClientIssueReports = async (user) => {
       },
     },
     order: [["createdAt", "DESC"]],
+    limit: MAX_LIST_ROWS,
   });
 
   return issues;
