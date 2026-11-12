@@ -1,4 +1,5 @@
 const clientService = require("../services/clientService");
+const logger = require("../utils/logger");
 
 const createClient = async (req, res) => {
   try {
@@ -91,7 +92,7 @@ const createClient = async (req, res) => {
       data: client,
     });
   } catch (error) {
-    console.error("Create client error:", error);
+    logger.error("Create client error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 400).json({
       message: error.message || "Failed to create client.",
@@ -103,7 +104,6 @@ const getClients = async (req, res) => {
   try {
     const companyId = req.user.companyId;
     const { search, page = 1, limit = 10 } = req.query;
-    console.log(search);
     const result = await clientService.getClients(companyId, {
       search,
       page: Number(page),
@@ -140,7 +140,7 @@ const getClientById = async (req, res) => {
       data: client,
     });
   } catch (error) {
-    console.error("Get client error:", error);
+    logger.error("Get client error", { error: error?.message, stack: error?.stack });
 
     return res.status(404).json({
       message: error.message || "Client not found.",
@@ -151,7 +151,6 @@ const getClientById = async (req, res) => {
 const updateClient = async (req, res) => {
   try {
     const companyId = req.user.companyId;
-    console.log(req.body);
     const client = await clientService.updateClient(
       req.params.id,
       companyId,
@@ -163,7 +162,7 @@ const updateClient = async (req, res) => {
       data: client,
     });
   } catch (error) {
-    console.error("Update client error:", error);
+    logger.error("Update client error", { error: error?.message, stack: error?.stack });
 
     return res.status(400).json({
       message: error.message || "Failed to update client.",
@@ -181,7 +180,7 @@ async function clientProjectsDropdown(req, res) {
       data,
     });
   } catch (error) {
-    console.error("Client projects dropdown error:", error);
+    logger.error("Client projects dropdown error", { error: error?.message, stack: error?.stack });
 
     return res.status(500).json({
       success: false,

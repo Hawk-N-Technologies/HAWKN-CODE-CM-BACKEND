@@ -1,4 +1,5 @@
 const companyHolidayService = require("../services/companyHolidayService");
+const logger = require("../utils/logger");
 
 async function createHoliday(req, res, next) {
   try {
@@ -65,7 +66,7 @@ async function deleteHoliday(req, res, next) {
       },
     });
   } catch (error) {
-    console.error("Delete company holiday controller failed:", error);
+    logger.error("Delete company holiday controller failed", { error: error?.message, stack: error?.stack });
 
     next(error);
   }

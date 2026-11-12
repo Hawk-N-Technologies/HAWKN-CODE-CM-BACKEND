@@ -50,6 +50,7 @@ const { initializeNotificationSocket } = require("./utils/notificationSocket");
 const User = require("./models/User");
 
 require("./models/associations");
+const responseStandards = require("./middleware/responseStandards");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
 const app = express();
 app.use(
@@ -64,6 +65,7 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 // app.use(tempCompanyContext);
+app.use(responseStandards);
 
 app.get("/", (req, res) => {
   res.status(200).json({

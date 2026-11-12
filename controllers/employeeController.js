@@ -1,4 +1,5 @@
 const employeeService = require("../services/employeeService");
+const logger = require("../utils/logger");
 
 const getEmployees = async (req, res) => {
   try {
@@ -51,7 +52,7 @@ const getEmployee = async (req, res) => {
       data: employee,
     });
   } catch (error) {
-    console.error("Get employee error:", error);
+    logger.error("Get employee error", { error: error?.message, stack: error?.stack });
 
     return res.status(500).json({
       success: false,
@@ -69,7 +70,7 @@ const getRoles = async (req, res) => {
       data: roles,
     });
   } catch (error) {
-    console.error("Get roles error:", error);
+    logger.error("Get roles error", { error: error?.message, stack: error?.stack });
 
     return res.status(500).json({
       success: false,
@@ -91,7 +92,7 @@ const createEmployee = async (req, res) => {
       data: employee,
     });
   } catch (error) {
-    console.error("Create employee error:", error);
+    logger.error("Create employee error", { error: error?.message, stack: error?.stack });
 
     if (
       error.statusCode === 400 ||
@@ -127,7 +128,7 @@ const updateEmployee = async (req, res) => {
       data: employee,
     });
   } catch (error) {
-    console.error("Update employee error:", error);
+    logger.error("Update employee error", { error: error?.message, stack: error?.stack });
 
     if (
       error.statusCode === 400 ||
@@ -159,7 +160,7 @@ const deleteEmployee = async (req, res) => {
       message: "Employee deleted successfully.",
     });
   } catch (error) {
-    console.error("Delete employee error:", error);
+    logger.error("Delete employee error", { error: error?.message, stack: error?.stack });
 
     if (error.message === "Employee not found.") {
       return res.status(404).json({
@@ -180,7 +181,6 @@ async function getPeople(req, res) {
     const companyId = req.user.companyId;
 
     const { search, page = 1, limit = 10, status, role } = req.query;
-    console.log(status, role);
     const result = await employeeService.getPeople(companyId, {
       search,
       page: Number(page),
@@ -219,7 +219,7 @@ async function createPerson(req, res) {
       data: person,
     });
   } catch (error) {
-    console.error("Create person error:", error);
+    logger.error("Create person error", { error: error?.message, stack: error?.stack });
 
     return res.status(400).json({
       success: false,
@@ -232,7 +232,6 @@ async function updatePerson(req, res) {
   try {
     const companyId = req.user.companyId;
     const personId = req.params.id;
-    console.log(req.params);
     const person = await employeeService.updatePerson(
       req.body,
       personId,
@@ -245,7 +244,7 @@ async function updatePerson(req, res) {
       data: person,
     });
   } catch (error) {
-    console.error("Update person error:", error);
+    logger.error("Update person error", { error: error?.message, stack: error?.stack });
 
     return res.status(400).json({
       success: false,

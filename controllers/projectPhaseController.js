@@ -1,4 +1,5 @@
 const projectPhaseService = require("../services/projectPhaseService");
+const logger = require("../utils/logger");
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -90,7 +91,7 @@ const handleError = (res, error, action) => {
     });
   }
 
-  console.error(`${action} error:`, error);
+  logger.error(`${action} error`, { error: error?.message, stack: error?.stack });
 
   return res.status(500).json({
     message: `Failed to ${action}.`,

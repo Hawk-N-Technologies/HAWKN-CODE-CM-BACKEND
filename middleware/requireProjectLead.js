@@ -1,4 +1,5 @@
 const authService = require("../services/authService");
+const logger = require("../utils/logger");
 
 async function requireProjectLead(req, res, next) {
   try {
@@ -34,7 +35,7 @@ async function checkProjectLead(userId, companyId, projectId) {
 
     return true;
   } catch (error) {
-    console.log(error);
+    logger.error("Unexpected error", { error: error?.message, stack: error?.stack });
     return false;
   }
 }

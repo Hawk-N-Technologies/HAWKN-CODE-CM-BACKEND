@@ -7,6 +7,7 @@ const sequelize = require("../config/db");
 const bcrypt = require("bcrypt");
 const Joi = require("joi");
 const { setSalarySchema } = require("../validations/payroll.validation");
+const logger = require("../utils/logger");
 
 const countryCodeRegex = /^\+[1-9]\d{0,2}$/;
 const phoneNumberRegex = /^\d{4,15}$/;
@@ -365,7 +366,6 @@ async function createEmployee(data, companyId) {
     const passwordHash = await bcrypt.hash(password, 12);
 
     const roleByuuid = await getRoleByUuid(roleUuid, transaction);
-    console.log(roleByuuid);
     const user = await User.create(
       {
         companyId,
@@ -711,7 +711,7 @@ async function updateEmployee(employeeId, companyId, data) {
     try {
       await transaction.rollback();
     } catch (rollbackError) {
-      console.error("Transaction rollback error:", rollbackError);
+      logger.error("Transaction rollback error", { error: rollbackError?.message, stack: rollbackError?.stack });
     }
 
     throw error;
@@ -1419,7 +1419,7 @@ async function updatePerson(data, personId, companyId) {
       email: user.email,
     };
   } catch (error) {
-    console.log(error);
+    logger.error("Unexpected error", { error: error?.message, stack: error?.stack });
     await transaction.rollback();
     throw error;
   }

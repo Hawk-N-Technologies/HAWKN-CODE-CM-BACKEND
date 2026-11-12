@@ -1,6 +1,13 @@
 const projectTaskService = require("../services/projectTaskService");
+const logger = require("../utils/logger");
 
 const getErrorStatus = (error) => {
+  // Errors that already carry a status (e.g. 404 from the service)
+  if (error.statusCode) return error.statusCode;
+
+  // Unexpected database errors are server errors, not bad requests
+  if (error.name?.startsWith("Sequelize")) return 500;
+
   if (error.message === "Task not found") return 404;
 
   if (
@@ -145,8 +152,6 @@ const getDevelopersAndTesters = async (req, res) => {
         message: "Company information not found",
       });
     }
-    console.log(req.user);
-    console.log(" i am dlkjldjflkdj ojd;lkfj sd;lkfj;sdlk jf;lksd j;lsdkfj");
     const employees =
       await projectTaskService.getDevelopersAndTesters(companyId);
     return res.status(200).json({
@@ -160,7 +165,7 @@ const getDevelopersAndTesters = async (req, res) => {
       })),
     });
   } catch (error) {
-    console.error("Failed to fetch employees:", error);
+    logger.error("Failed to fetch employees", { error: error?.message, stack: error?.stack });
 
     return res.status(500).json({
       message: "Failed to fetch employees",
@@ -180,7 +185,7 @@ const getMyTasks = async (req, res) => {
       data: tasks,
     });
   } catch (error) {
-    console.error("Get developer tasks error:", error);
+    logger.error("Get developer tasks error", { error: error?.message, stack: error?.stack });
 
     return res.status(500).json({
       success: false,
@@ -214,7 +219,7 @@ const updateMyTaskStatus = async (req, res) => {
       data: task,
     });
   } catch (error) {
-    console.error("Update developer task status error:", error);
+    logger.error("Update developer task status error", { error: error?.message, stack: error?.stack });
 
     if (error.message === "Invalid task status.") {
       return res.status(400).json({
@@ -256,7 +261,7 @@ const taskDropdown = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error("Task dropdown error:", error);
+    logger.error("Task dropdown error", { error: error?.message, stack: error?.stack });
 
     return res.status(500).json({
       success: false,
