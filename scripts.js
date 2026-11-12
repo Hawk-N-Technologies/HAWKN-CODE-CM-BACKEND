@@ -1,3 +1,4 @@
+require("./config/env");
 const fs = require("fs");
 const path = require("path");
 const sequelize = require("./config/db");
@@ -8,7 +9,7 @@ async function migrate() {
   try {
     await sequelize.authenticate();
 
-    console.log("✅ Database connected");
+    console.log(`✅ Database connected [${process.env.NODE_ENV}]`);
 
     const { DataTypes } = require("@sequelize/core");
 
@@ -73,7 +74,7 @@ async function seed() {
   try {
     await sequelize.authenticate();
 
-    console.log("✅ Database connected");
+    console.log(`✅ Database connected [${process.env.NODE_ENV}]`);
 
     const userSeeder = require("./seeders/userSeeder");
 

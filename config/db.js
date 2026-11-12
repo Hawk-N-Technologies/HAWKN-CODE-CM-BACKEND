@@ -1,11 +1,13 @@
-require("dotenv").config();
+require("./env");
 const { Sequelize } = require("@sequelize/core");
 const { PostgresDialect } = require("@sequelize/postgres");
 const { MySqlDialect } = require("@sequelize/mysql");
 
 const dbUrl = process.env.DATABASE_URL || "";
 if (!dbUrl) {
-  console.error("⚠️ DATABASE_URL environment variable is missing!");
+  console.error(
+    `⚠️ DATABASE_URL environment variable is missing for NODE_ENV='${process.env.NODE_ENV}'!`
+  );
 }
 const isMysql = dbUrl.startsWith("mysql://");
 
@@ -16,4 +18,5 @@ const sequelize = new Sequelize({
 });
 
 module.exports = sequelize;
+
 

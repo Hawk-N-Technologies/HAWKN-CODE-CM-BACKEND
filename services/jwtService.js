@@ -1,26 +1,34 @@
+require("../config/env");
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
+function getJwtSecret() {
+  return process.env.JWT_SECRET;
+}
+
+function getJwtExpiresIn() {
+  return process.env.JWT_EXPIRES_IN || "30d";
+}
 
 function generateJwt(payload) {
-  if (!JWT_SECRET) {
+  const secret = getJwtSecret();
+  if (!secret) {
     throw new Error("JWT_SECRET is not configured");
   }
 
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
+  return jwt.sign(payload, secret, {
+    expiresIn: getJwtExpiresIn(),
     issuer: "hawkn-cm",
   });
 }
 
 function verifyJwt(token) {
-  if (!JWT_SECRET) {
+  const secret = getJwtSecret();
+  if (!secret) {
     throw new Error("JWT_SECRET is not configured");
   }
 
   try {
-    return jwt.verify(token, JWT_SECRET, {
+    return jwt.verify(token, secret, {
       issuer: "hawkn-cm",
     });
   } catch (error) {
