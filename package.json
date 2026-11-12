@@ -7,8 +7,17 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "start:stage": "NODE_ENV=staging node server.js",
+    "start:prod": "NODE_ENV=production node server.js",
     "migrate": "node scripts.js migrate",
-    "seed": "node scripts.js seed"
+    "migrate:stage": "NODE_ENV=staging node scripts.js migrate",
+    "migrate:prod": "NODE_ENV=production node scripts.js migrate",
+    "seed": "node scripts.js seed",
+    "seed:stage": "NODE_ENV=staging node scripts.js seed",
+    "seed:prod": "NODE_ENV=production node scripts.js seed",
+    "docker:build": "docker build -t hawkn-backend .",
+    "docker:build:stage": "docker build --build-arg NODE_ENV=staging -t hawkn-backend:staging .",
+    "docker:build:prod": "docker build --build-arg NODE_ENV=production -t hawkn-backend:production ."
   },
   "repository": {
     "type": "git",

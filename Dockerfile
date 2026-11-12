@@ -15,11 +15,15 @@ RUN npm ci --omit=dev
 # Copy application source code
 COPY . .
 
+# Optional build-time argument for environment mode (staging or production)
+ARG NODE_ENV
+ENV NODE_ENV=${NODE_ENV}
+
 # Ensure entrypoint script is executable
 RUN chmod +x docker-entrypoint.sh
 
-# Expose application port
-EXPOSE 12121
+# Expose application ports (12121 for staging, 43211 for production)
+EXPOSE 12121 43211
 
 # Run migrations and start server
 ENTRYPOINT ["./docker-entrypoint.sh"]

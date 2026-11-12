@@ -1,3 +1,4 @@
+require("./config/env");
 const fs = require("fs");
 const path = require("path");
 const sequelize = require("./config/db");
@@ -8,7 +9,7 @@ async function migrate() {
   try {
     await sequelize.authenticate();
 
-    console.log("✅ Database connected");
+    console.log(`✅ Database connected [${process.env.NODE_ENV}]`);
 
     const { DataTypes } = require("@sequelize/core");
 
@@ -23,6 +24,19 @@ async function migrate() {
 
     const isMysql = sequelize.dialect.name === "mysql";
     const metaTable = isMysql ? "`SequelizeMeta`" : '"SequelizeMeta"';
+
+    // Failsafe default for UUID across dialects
+    global.uuidDefault = isMysql
+      ? sequelize.Sequelize.literal("(UUID())")
+      : sequelize.Sequelize.literal("gen_random_uuid()");
+
+    // Proxy DataTypes and Sequelize static helpers (literal, fn, Op) without deprecation warnings
+    const migrationSequelize = new Proxy(DataTypes, {
+      get(target, prop) {
+        if (prop in target) return target[prop];
+        return sequelize.Sequelize[prop];
+      },
+    });
 
     const [executedRecords] = await sequelize.query(
       `SELECT name FROM ${metaTable};`
@@ -46,7 +60,7 @@ async function migrate() {
 
       const migration = require(path.join(migrationsPath, file));
 
-      await migration.up(sequelize.queryInterface, sequelize.Sequelize);
+      await migration.up(sequelize.queryInterface, migrationSequelize);
 
       await sequelize.query(
         `INSERT INTO ${metaTable} (name) VALUES (?);`,
@@ -73,7 +87,7 @@ async function seed() {
   try {
     await sequelize.authenticate();
 
-    console.log("✅ Database connected");
+    console.log(`✅ Database connected [${process.env.NODE_ENV}]`);
 
     const userSeeder = require("./seeders/userSeeder");
 
