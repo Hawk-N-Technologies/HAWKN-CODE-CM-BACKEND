@@ -87,7 +87,7 @@ async function reportBug(req, res) {
       });
     }
 
-    const bug = await bugsService.createBug(req.user.userId, {
+    const bug = await bugsService.createBug(req.user, {
       ...req.body,
       title: title.trim(),
     });
@@ -147,7 +147,7 @@ async function fetchProjectBugs(req, res) {
       status,
       severity,
       moduleId,
-    });
+    }, req.user.companyId);
 
     return res.status(200).json({
       success: true,
@@ -167,7 +167,11 @@ async function fetchProjectBugs(req, res) {
 
 async function getDevelopers(req, res) {
   try {
-    const employees = await bugsService.getDevs();
+    // Developers on the teams of the projects this lead leads
+    const employees = await bugsService.getDevs(
+      req.user.companyId,
+      req.user.userId,
+    );
 
     const developers = employees.map((employee) => ({
       id: employee.id,
@@ -271,7 +275,7 @@ async function updateProjectBug(req, res) {
       });
     }
 
-    const bug = await bugsService.updateBug(bugId, projectId, req.body);
+    const bug = await bugsService.updateBug(bugId, projectId, req.body, req.user.companyId);
 
     return res.status(200).json({
       success: true,
@@ -310,6 +314,7 @@ async function fetchAssignedBugs(req, res) {
     const bugs = await bugsService.getAssignedBugs(
       employeeId,
       Number(projectId),
+      req.user.companyId
     );
 
     return res.status(200).json({
@@ -323,14 +328,14 @@ async function fetchAssignedBugs(req, res) {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch assigned bugs.",
+      message: error.statusCode && error.statusCode < 500 ? error.message : "Failed to fetch assigned bugs.",
     });
   }
 }
 
 async function projectsDropdown(req, res) {
   try {
-    const data = await bugsService.projectsDropdown();
+    const data = await bugsService.projectsDropdown(req.user);
 
     return res.status(200).json({
       success: true,
@@ -351,11 +356,8 @@ async function updateBugStatus(req, res) {
   try {
     const { uuid } = req.params;
     const { status } = req.body;
-    console.log(status);
 
-    console.log("i amd lk l");
-
-    const bug = await bugsService.updateStatusDEV(uuid, status);
+    const bug = await bugsService.updateStatusDEV(uuid, status, req.user);
 
     return res.status(200).json({
       success: true,
@@ -398,7 +400,7 @@ async function getReportedIssues(req, res) {
 
 async function getIssuesForTester(req, res) {
   try {
-    const data = await bugsService.getIssuesForTester(req.user.userId);
+    const data = await bugsService.getIssuesForTester(req.user.userId, req.user.companyId);
 
     return res.status(200).json({
       success: true,
@@ -422,9 +424,8 @@ async function updateIssueStatus(req, res) {
   try {
     const { uuid } = req.params;
     const { status, classification } = req.body;
-    console.log(req.body);
 
-    const data = await bugsService.updateStatus(uuid, status, classification);
+    const data = await bugsService.updateStatus(uuid, status, classification, req.user);
 
     return res.status(200).json({
       success: true,
@@ -446,7 +447,7 @@ async function updateIssueStatus(req, res) {
 
 async function createBugByTester(req, res) {
   try {
-    const data = await bugsService.createBugByTester(req.body);
+    const data = await bugsService.createBugByTester(req.body, req.user);
 
     return res.status(201).json({
       success: true,
@@ -468,7 +469,7 @@ async function createBugByTester(req, res) {
 
 async function getBugsInTester(req, res) {
   try {
-    const data = await bugsService.getBugsInTester(req.user.userId);
+    const data = await bugsService.getBugsInTester(req.user.userId, req.user.companyId);
 
     return res.status(200).json({
       success: true,
@@ -491,7 +492,7 @@ async function getBugsInTester(req, res) {
 async function updateBugByTester(req, res) {
   try {
     const { uuid } = req.params;
-    const data = await bugsService.updateBugByTester(uuid, req.body);
+    const data = await bugsService.updateBugByTester(uuid, req.body, req.user);
 
     return res.status(200).json({
       success: true,

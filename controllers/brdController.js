@@ -3,6 +3,39 @@ const logger = require("../utils/logger");
 const path = require("path");
 const fs = require("fs");
 const BRDVersion = require("../models/BRDVersion");
+const BRD = require("../models/BRD");
+const Client = require("../models/Client");
+
+/**
+ * Who may download a BRD file:
+ *  - admin  → every BRD (by design)
+ *  - bde    → BRDs of their own company
+ *  - client → only their own BRDs
+ */
+async function canDownloadBRD(user, brdId) {
+  if (user.role === "admin") return true;
+
+  const brd = await BRD.findOne({
+    where: { id: brdId },
+    attributes: ["id", "companyId", "clientId"],
+  });
+
+  if (!brd || Number(brd.companyId) !== Number(user.companyId)) return false;
+
+  if (user.role === "bde") return true;
+
+  if (user.role === "client") {
+    const client = await Client.findOne({
+      where: { userId: user.userId, companyId: user.companyId, isActive: true },
+      attributes: ["id"],
+    });
+
+    return Boolean(client) && Number(client.id) === Number(brd.clientId);
+  }
+
+  return false;
+}
+
 const notificationService = require("../services/notificationService");
 
 // Resolve the authenticated user ID consistently.
@@ -179,7 +212,8 @@ async function getBRDFile(req, res) {
       where: { uuid: versionUuid },
     });
 
-    if (!version) {
+    // Same answer as "not found" so other BRDs can't be discovered
+    if (!version || !(await canDownloadBRD(req.user, version.brdId))) {
       return res.status(404).json({
         success: false,
         message: "BRD file not found",

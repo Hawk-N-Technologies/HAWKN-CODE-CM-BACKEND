@@ -41,6 +41,15 @@ async function login(email, password) {
       throw error;
     }
 
+    // Onboarded users have no password until it is set — don't crash bcrypt
+    if (!user.passwordHash) {
+      const error = new Error(
+        "Your account is not activated yet. Please contact HR.",
+      );
+      error.statusCode = 401;
+      throw error;
+    }
+
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
@@ -236,6 +245,9 @@ async function checkProjectLeadAccess(userId, companyId) {
 }
 
 async function checkProjectLeadAccess2(userId, companyId, projectId) {
+  // Lead of THIS project only (project lead, or lead on its operations plan)
+  if (!projectId) return false;
+
   const employee = await Employee.findOne({
     where: {
       userId,
@@ -250,6 +262,7 @@ async function checkProjectLeadAccess2(userId, companyId, projectId) {
   const [project, operation] = await Promise.all([
     Project.findOne({
       where: {
+        id: projectId,
         companyId,
         projectLeadId: employee.id,
       },
@@ -268,6 +281,7 @@ async function checkProjectLeadAccess2(userId, companyId, projectId) {
 
   return Boolean(project || operation);
 }
+
 module.exports = {
   login,
   getMe,

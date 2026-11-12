@@ -4,7 +4,15 @@ const router = express.Router();
 const bugController = require("../controllers/bugsController");
 const authMiddleware = require("../middleware/authenticate");
 const { requireProjectLead } = require("../middleware/requireProjectLead");
-// Apply your existing client authentication and authorization middleware.
+const {
+  projectFrom,
+  requireProjectAccess,
+  requireLeadOfProject,
+} = require("../middleware/projectAccess");
+
+// Company + ownership/assignment checks for client and tester routes live in
+// bugsService (the project comes from the body or from the bug itself).
+
 router.post(
   "/bugs",
   authMiddleware(["client", "tester"]),
@@ -17,19 +25,22 @@ router.post(
   bugController.createIssueReport,
 );
 
+// Project lead routes: lead of THIS project only
 router.post(
   "/createBug",
   authMiddleware(["developer"]),
-  requireProjectLead,
+  requireLeadOfProject(projectFrom.body("projectId")),
   bugController.reportBug,
 );
+
 router.get(
   "/projects/:projectId/bugs",
   authMiddleware(["developer"]),
-  requireProjectLead,
+  requireLeadOfProject(projectFrom.param("projectId")),
   bugController.fetchProjectBugs,
 );
 
+// Any project lead; list is limited to the lead's own company
 router.get(
   "/developers",
   authMiddleware(["developer"]),
@@ -40,13 +51,15 @@ router.get(
 router.patch(
   "/projects/:projectId/bugs/:bugId",
   authMiddleware(["developer"]),
-  requireProjectLead,
+  requireLeadOfProject(projectFrom.param("projectId")),
   bugController.updateProjectBug,
 );
 
+// :projectId may be the numeric id or the UUID
 router.get(
   "/projects/:projectId/assigned-bugs",
   authMiddleware(["developer"]),
+  requireProjectAccess(projectFrom.param("projectId")),
   bugController.fetchAssignedBugs,
 );
 
@@ -55,11 +68,13 @@ router.get(
   authMiddleware(["developer", "tester"]),
   bugController.projectsDropdown,
 );
+
 router.get(
   "/issued-bugs",
   authMiddleware(["client"]),
   bugController.getReportedIssues,
 );
+
 router.get(
   "/issuesForTester",
   authMiddleware(["tester"]),
@@ -95,6 +110,5 @@ router.patch(
   authMiddleware(["tester"]),
   bugController.updateBugByTester,
 );
-// Cr
 
 module.exports = router;

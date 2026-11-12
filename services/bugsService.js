@@ -12,11 +12,19 @@ const { Op } = require("@sequelize/core");
 
 const { QueryTypes } = require("@sequelize/core");
 const IssueReport = require("../models/IssueReport");
-const { TIERS } = require("../validations/project.validation");
 const ProjectOperationTester = require("../models/ProjectOperationTester");
+const ProjectOperationDeveloper = require("../models/ProjectOperationDeveloper");
 const ProjectOperation = require("../models/ProjectOperation");
 const ProjectModule = require("../models/ProjectModule");
 const Client = require("../models/Client");
+const {
+  refWhere,
+  findCompanyProject,
+  findActiveEmployee,
+  isLeadOfProject,
+  isClientOfProject,
+} = require("../middleware/projectAccess");
+
 const STATUSES = [
   "Open",
   "Assigned",
@@ -45,43 +53,298 @@ class BugServiceError extends Error {
   }
 }
 
-async function createBug(userId, data) {
-  const { projectId, moduleId, title, description, severity, discoverySource } =
-    data;
+// ---------------------------------------------------------------------------
+// Access helpers — every lookup stays inside the user's company
+// ---------------------------------------------------------------------------
 
-  const project = await Project.findOne({
-    where: { uuid: projectId },
-  });
-
-  if (!project) {
-    throw new Error("Project not found.");
+// Project of the user's company (UUID or numeric id), or 404
+async function getCompanyProject(ref, companyId, transaction) {
+  if (ref === undefined || ref === null || ref === "") {
+    throw new BugServiceError("Project ID is required.", 400);
   }
 
-  return IssueReport.create({
+  const project = await findCompanyProject(ref, companyId, transaction);
+
+  if (!project) {
+    throw new BugServiceError("Project not found.", 404);
+  }
+
+  return project;
+}
+
+// Module of THIS project (UUID or numeric id). Empty → null.
+async function getProjectModule(ref, projectId, transaction) {
+  if (ref === undefined || ref === null || ref === "") return null;
+
+  const where = refWhere(ref);
+
+  const module = where
+    ? await ProjectModule.findOne({
+        where: { ...where, projectId },
+        attributes: ["id", "uuid", "name"],
+        transaction,
+      })
+    : null;
+
+  if (!module) {
+    throw new BugServiceError("Module does not belong to this project.", 400);
+  }
+
+  return module;
+}
+
+// Assignee must be an active employee of the same company. Empty → null.
+async function getCompanyAssignee(employeeId, companyId, transaction) {
+  if (employeeId === undefined || employeeId === null || employeeId === "") {
+    return null;
+  }
+
+  const employee = await Employee.findOne({
+    where: {
+      id: Number(employeeId),
+      companyId,
+      employmentStatus: "Active",
+    },
+    attributes: ["id"],
+    transaction,
+  });
+
+  if (!employee) {
+    throw new BugServiceError("Assigned developer not found.", 400);
+  }
+
+  return employee.id;
+}
+
+// Project ids a tester is assigned to (team testers + operations tester)
+async function getTesterProjectIds(employeeId, companyId) {
+  const links = await ProjectOperationTester.findAll({
+    where: { employeeId },
+    attributes: ["projectOperationId"],
+    raw: true,
+  });
+
+  const operations = await ProjectOperation.findAll({
+    where: {
+      companyId,
+      [Op.or]: [
+        { id: { [Op.in]: links.map((link) => link.projectOperationId) } },
+        { testerId: employeeId },
+      ],
+    },
+    attributes: ["projectId"],
+    raw: true,
+  });
+
+  return [...new Set(operations.map((operation) => operation.projectId))];
+}
+
+async function isTesterOfProject(userId, companyId, projectId) {
+  const employee = await findActiveEmployee(userId, companyId);
+  if (!employee) return false;
+
+  const projectIds = await getTesterProjectIds(employee.id, companyId);
+  return projectIds.some((id) => Number(id) === Number(projectId));
+}
+
+async function assertTesterOfProject(user, projectId) {
+  const allowed = await isTesterOfProject(
+    user.userId,
+    user.companyId,
+    projectId,
+  );
+
+  if (!allowed) {
+    throw new BugServiceError("You are not assigned to test this project.", 403);
+  }
+}
+
+// Who may report a bug on a project
+async function assertCanReport(user, project) {
+  if (user.role === "client") {
+    const owns = await isClientOfProject(user.userId, user.companyId, project);
+    if (!owns) throw new BugServiceError("Project not found.", 404);
+    return;
+  }
+
+  if (user.role === "tester") {
+    await assertTesterOfProject(user, project.id);
+    return;
+  }
+
+  if (user.role === "developer") {
+    const isLead = await isLeadOfProject(user.userId, user.companyId, project);
+    if (!isLead) {
+      throw new BugServiceError(
+        "Only the lead of this project can do this.",
+        403,
+      );
+    }
+    return;
+  }
+
+  throw new BugServiceError("You are not allowed to report bugs.", 403);
+}
+
+// ---------------------------------------------------------------------------
+// Team helpers — the project's team lives on its operations plan
+// ---------------------------------------------------------------------------
+
+// Developer employee ids on THIS project's team
+async function getTeamDeveloperIds(projectId, companyId, transaction) {
+  const operations = await ProjectOperation.findAll({
+    where: { projectId, companyId },
+    attributes: ["id"],
+    raw: true,
+    transaction,
+  });
+
+  if (!operations.length) return [];
+
+  const links = await ProjectOperationDeveloper.findAll({
+    where: {
+      projectOperationId: { [Op.in]: operations.map((item) => item.id) },
+    },
+    attributes: ["employeeId"],
+    raw: true,
+    transaction,
+  });
+
+  return [...new Set(links.map((link) => Number(link.employeeId)))];
+}
+
+/**
+ * A bug can only be assigned to an active developer of the same company who
+ * is on THIS project's team (the developers under its lead). Empty → null.
+ */
+async function getTeamAssignee(employeeId, project, companyId, transaction) {
+  if (employeeId === undefined || employeeId === null || employeeId === "") {
+    return null;
+  }
+
+  const id = await getCompanyAssignee(employeeId, companyId, transaction);
+  const teamIds = await getTeamDeveloperIds(project.id, companyId, transaction);
+
+  if (!teamIds.includes(Number(id))) {
+    throw new BugServiceError(
+      "Assign a developer from this project's team.",
+      400,
+    );
+  }
+
+  const developer = await Employee.findOne({
+    where: { id, companyId },
+    attributes: ["id"],
+    include: [
+      {
+        model: User,
+        as: "user",
+        attributes: ["id"],
+        required: true,
+        where: { isActive: true },
+        include: [
+          {
+            model: Role,
+            as: "role",
+            attributes: ["name"],
+            required: true,
+            where: { name: "developer" },
+          },
+        ],
+      },
+    ],
+    transaction,
+  });
+
+  if (!developer) {
+    throw new BugServiceError("Assign a developer from this project's team.", 400);
+  }
+
+  return id;
+}
+
+// Next retest attempt number for a bug (1, 2, 3 …)
+async function nextAttemptNumber(bugId, transaction) {
+  const last = await BugTesting.max("attemptNumber", {
+    where: { bugId },
+    transaction,
+  });
+
+  return (Number(last) || 0) + 1;
+}
+
+// ---------------------------------------------------------------------------
+// Bugs
+// ---------------------------------------------------------------------------
+
+/**
+ * Report a bug.
+ *  - client    → a ticket for the tester to review (IssueReport)
+ *  - tester    → a real bug, Open + unassigned, so it goes to the project lead
+ *  - developer → (project lead) a real bug, optionally assigned to a developer
+ *                on this project's team
+ */
+async function createBug(user, data) {
+  const {
+    projectId,
+    moduleId,
+    title,
+    description,
+    severity,
+    discoverySource,
+    assignedTo,
+  } = data;
+
+  const project = await getCompanyProject(projectId, user.companyId);
+  await assertCanReport(user, project);
+
+  const module = await getProjectModule(moduleId, project.id);
+
+  if (user.role === "client") {
+    return IssueReport.create({
+      projectId: project.id,
+      moduleId: module?.id ?? null,
+      title: title.trim(),
+      description: description?.trim() || null,
+      severity: severity || "Medium",
+      reportedBy: user.userId,
+      status: "Submitted",
+      classification: "Bug",
+    });
+  }
+
+  if (user.role === "tester") {
+    return ProjectBug.create({
+      projectId: project.id,
+      moduleId: module?.id ?? null,
+      title: title.trim(),
+      description: description?.trim() || null,
+      severity: severity || "Medium",
+      discoverySource: "Testing",
+      status: "Open",
+      assignedTo: null,
+    });
+  }
+
+  // Project lead
+  const assigneeId = await getTeamAssignee(assignedTo, project, user.companyId);
+
+  return ProjectBug.create({
     projectId: project.id,
-    moduleId: moduleId,
+    moduleId: module?.id ?? null,
     title: title.trim(),
-    description: description.trim(),
+    description: description?.trim() || null,
     severity: severity || "Medium",
-    discoverySource: "Client",
-    reportedBy: userId,
-    status: "Submitted",
-    classification: "Bug",
+    discoverySource: discoverySource || "Development",
+    status: assigneeId ? "Assigned" : "Open",
+    assignedTo: assigneeId,
   });
 }
 
-async function getProjectBugs(projectId, filters = {}) {
+async function getProjectBugs(projectId, filters = {}, companyId) {
   const { status, severity, moduleId } = filters;
 
-  const project = await Project.findOne({
-    where: { uuid: projectId },
-  });
-
-  if (!project) {
-    const error = new Error("Project not found.");
-    error.statusCode = 404;
-    throw error;
-  }
+  const project = await getCompanyProject(projectId, companyId);
 
   const where = {
     projectId: project.id,
@@ -96,18 +359,7 @@ async function getProjectBugs(projectId, filters = {}) {
   }
 
   if (moduleId) {
-    const module = await ProjectModule.findOne({
-      where: {
-        uuid: moduleId,
-      },
-    });
-
-    if (!module) {
-      const error = new Error("Module not found.");
-      error.statusCode = 404;
-      throw error;
-    }
-
+    const module = await getProjectModule(moduleId, project.id);
     where.moduleId = module.id;
   }
 
@@ -117,10 +369,46 @@ async function getProjectBugs(projectId, filters = {}) {
   });
 }
 
-async function getDevs() {
+// Developers on the teams of the projects this lead leads (same company)
+async function getDevs(companyId, userId) {
+  const employee = await findActiveEmployee(userId, companyId);
+
+  if (!employee) return [];
+
+  const [ledProjects, ledOperations] = await Promise.all([
+    Project.findAll({
+      where: { companyId, projectLeadId: employee.id },
+      attributes: ["id"],
+      raw: true,
+    }),
+    ProjectOperation.findAll({
+      where: { companyId, projectLeadId: employee.id },
+      attributes: ["projectId"],
+      raw: true,
+    }),
+  ]);
+
+  const projectIds = [
+    ...new Set([
+      ...ledProjects.map((project) => project.id),
+      ...ledOperations.map((operation) => operation.projectId),
+    ]),
+  ];
+
+  const teamIds = new Set();
+  for (const projectId of projectIds) {
+    for (const id of await getTeamDeveloperIds(projectId, companyId)) {
+      teamIds.add(id);
+    }
+  }
+
+  if (!teamIds.size) return [];
+
   return Employee.findAll({
     attributes: ["id", "uuid", "userId"],
     where: {
+      id: { [Op.in]: [...teamIds] },
+      companyId,
       employmentStatus: "Active",
     },
     include: [
@@ -130,6 +418,7 @@ async function getDevs() {
         attributes: ["id", "firstName", "lastName"],
         required: true,
         where: {
+          companyId,
           isActive: true,
         },
         include: [
@@ -150,18 +439,11 @@ async function getDevs() {
   });
 }
 
-async function updateBug(bugId, projectId, data) {
+async function updateBug(bugId, projectId, data, companyId) {
   const transaction = await sequelize.startUnmanagedTransaction();
 
   try {
-    const project = await Project.findOne({
-      where: { uuid: projectId },
-      transaction,
-    });
-
-    if (!project) {
-      throw new Error("Project not found.");
-    }
+    const project = await getCompanyProject(projectId, companyId, transaction);
 
     const bug = await ProjectBug.findOne({
       where: {
@@ -172,7 +454,7 @@ async function updateBug(bugId, projectId, data) {
     });
 
     if (!bug) {
-      throw new Error("Bug not found in this project.");
+      throw new BugServiceError("Bug not found in this project.", 404);
     }
 
     const updates = {};
@@ -198,11 +480,21 @@ async function updateBug(bugId, projectId, data) {
     }
 
     if (data.moduleId !== undefined) {
-      updates.moduleId = data.moduleId || null;
+      const module = await getProjectModule(
+        data.moduleId,
+        project.id,
+        transaction,
+      );
+      updates.moduleId = module?.id ?? null;
     }
 
     if (data.assignedTo !== undefined) {
-      updates.assignedTo = data.assignedTo || null;
+      updates.assignedTo = await getTeamAssignee(
+        data.assignedTo,
+        project,
+        companyId,
+        transaction,
+      );
 
       if (
         updates.assignedTo &&
@@ -224,7 +516,7 @@ async function updateBug(bugId, projectId, data) {
         {
           projectId: project.id,
           bugId: bug.id,
-          attemptNumber: 1,
+          attemptNumber: await nextAttemptNumber(bug.id, transaction),
           status: "Pending",
         },
         { transaction },
@@ -242,99 +534,162 @@ async function updateBug(bugId, projectId, data) {
   }
 }
 
-async function getAssignedBugs(employeeId, projectId, moduleId) {
-  try {
-    const employee = await Employee.findOne({
-      where: {
-        userId: employeeId,
-      },
-    });
+// Bugs assigned to the logged-in developer in one project
+async function getAssignedBugs(userId, projectId, companyId) {
+  const employee = await findActiveEmployee(userId, companyId);
 
-    console.log(employee);
-    const bugs = await ProjectBug.findAll({
-      where: {
-        assignedTo: employee.id,
-        projectId: projectId,
-      },
-      order: [["createdAt", "DESC"]],
-    });
+  if (!employee) return [];
 
-    return bugs;
-  } catch (error) {
-    console.error("Error fetching assigned bugs:", error);
-    throw error;
-  }
+  const project = await getCompanyProject(projectId, companyId);
+
+  return ProjectBug.findAll({
+    where: {
+      assignedTo: employee.id,
+      projectId: project.id,
+    },
+    order: [["createdAt", "DESC"]],
+  });
 }
 
-async function projectsDropdown() {
-  try {
-    const projects = await Project.findAll({
-      attributes: ["id", "uuid", "name"],
-    });
+/**
+ * Projects for the bug pages:
+ *  - tester    → projects they are assigned to test
+ *  - developer → projects they lead, are on the team of, or have bugs in
+ */
+async function projectsDropdown(user) {
+  const { userId, companyId, role } = user;
+  const employee = await findActiveEmployee(userId, companyId);
 
-    return projects;
-  } catch (error) {
-    console.log(error);
+  if (!employee) return [];
+
+  let projectIds = [];
+
+  if (role === "tester") {
+    projectIds = await getTesterProjectIds(employee.id, companyId);
+  } else {
+    const [ledProjects, ledOperations, teamLinks, assignedBugs] =
+      await Promise.all([
+        Project.findAll({
+          where: { companyId, projectLeadId: employee.id },
+          attributes: ["id"],
+          raw: true,
+        }),
+        ProjectOperation.findAll({
+          where: { companyId, projectLeadId: employee.id },
+          attributes: ["projectId"],
+          raw: true,
+        }),
+        ProjectOperationDeveloper.findAll({
+          where: { employeeId: employee.id },
+          attributes: ["projectOperationId"],
+          raw: true,
+        }),
+        ProjectBug.findAll({
+          where: { assignedTo: employee.id },
+          attributes: ["projectId"],
+          raw: true,
+        }),
+      ]);
+
+    const teamOperations = teamLinks.length
+      ? await ProjectOperation.findAll({
+          where: {
+            companyId,
+            id: { [Op.in]: teamLinks.map((link) => link.projectOperationId) },
+          },
+          attributes: ["projectId"],
+          raw: true,
+        })
+      : [];
+
+    projectIds = [
+      ...ledProjects.map((project) => project.id),
+      ...ledOperations.map((operation) => operation.projectId),
+      ...teamOperations.map((operation) => operation.projectId),
+      ...assignedBugs.map((bug) => bug.projectId),
+    ];
   }
+
+  const uniqueIds = [...new Set(projectIds.filter(Boolean))];
+
+  if (!uniqueIds.length) return [];
+
+  // companyId here also filters out bugs/links pointing elsewhere
+  return Project.findAll({
+    where: { companyId, id: { [Op.in]: uniqueIds } },
+    attributes: ["id", "uuid", "name"],
+    order: [["name", "ASC"]],
+  });
 }
+
 const ALLOWED_STATUSES = ["Fixed", "In Progress", "Assigned"];
 
-async function updateStatusDEV(uuid, status) {
-  try {
-    console.log("i am ;in l;jlkj; kl;j ;");
-    if (!uuid || typeof uuid !== "string") {
-      const error = new Error("Valid bug UUID is required.");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    if (!ALLOWED_STATUSES.includes(status)) {
-      const error = new Error(
-        `Invalid status. Allowed statuses: ${ALLOWED_STATUSES.join(", ")}.`,
-      );
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const bug = await ProjectBug.findOne({
-      where: { uuid },
-    });
-
-    if (bug.status == "Ready for Retest") {
-      return;
-    }
-
-    if (!bug) {
-      const error = new Error("Bug not found.");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    await bug.update({ status });
-
-    return bug;
-  } catch (error) {
-    console.log(error);
+// Developer updates the status of a bug ASSIGNED TO THEM
+async function updateStatusDEV(uuid, status, user) {
+  if (!uuid || typeof uuid !== "string") {
+    throw new BugServiceError("Valid bug UUID is required.", 400);
   }
+
+  if (!ALLOWED_STATUSES.includes(status)) {
+    throw new BugServiceError(
+      `Invalid status. Allowed statuses: ${ALLOWED_STATUSES.join(", ")}.`,
+      400,
+    );
+  }
+
+  const employee = await findActiveEmployee(user.userId, user.companyId);
+
+  if (!employee) {
+    throw new BugServiceError("Bug not found.", 404);
+  }
+
+  const bug = await ProjectBug.findOne({
+    where: { uuid, assignedTo: employee.id },
+    include: [
+      {
+        model: Project,
+        as: "project",
+        attributes: ["id"],
+        where: { companyId: user.companyId },
+        required: true,
+      },
+    ],
+  });
+
+  if (!bug) {
+    throw new BugServiceError("Bug not found or not assigned to you.", 404);
+  }
+
+  // The developer can only move a bug while it is with them.
+  // Ready for Retest / Closed / Rejected / Open / Reopened belong to the
+  // project lead or the tester.
+  const DEVELOPER_STAGES = ["Assigned", "In Progress", "Fixed"];
+
+  if (!DEVELOPER_STAGES.includes(bug.status)) {
+    throw new BugServiceError(
+      `This bug is "${bug.status}" and can't be changed by the developer right now.`,
+      409,
+    );
+  }
+
+  await bug.update({ status });
+
+  return bug;
 }
 
 async function getReportedIssues(userId) {
-  try {
-    const res = await IssueReport.findAll({
-      where: {
-        reportedBy: userId,
-      },
-    });
-    return res;
-  } catch (talha) {
-    console.log(talha);
-  }
+  // reportedBy = the logged-in user → only their own issues
+  return IssueReport.findAll({
+    where: {
+      reportedBy: userId,
+    },
+  });
 }
 
-async function getIssuesForTester(userId) {
+async function getIssuesForTester(userId, companyId) {
   try {
     const employee = await Employee.findOne({
-      where: { userId },
+      where: { userId, companyId },
       attributes: ["id"],
       raw: true,
     });
@@ -356,9 +711,11 @@ async function getIssuesForTester(userId) {
       INNER JOIN project_operations po
         ON po.id = pot.project_operation_id
         AND po.project_id = ir.project_id
+        AND po.company_id = :company_id
 
       INNER JOIN projects p
         ON p.id = ir.project_id
+        AND p.company_id = :company_id
 
       LEFT JOIN project_modules pm
         ON pm.id = ir.module_id
@@ -369,6 +726,7 @@ async function getIssuesForTester(userId) {
       {
         replacements: {
           employee_id: employee.id,
+          company_id: companyId,
         },
         type: QueryTypes.SELECT,
       },
@@ -381,306 +739,270 @@ async function getIssuesForTester(userId) {
   }
 }
 
-async function updateStatus(uuid, status, classification) {
-  try {
-    const issue = await IssueReport.findOne({
-      where: {
-        uuid,
-      },
-    });
+// Tester reviews an issue of a project they are assigned to
+async function updateStatus(uuid, status, classification, user) {
+  const issue = await IssueReport.findOne({
+    where: {
+      uuid,
+    },
+  });
 
-    if (!issue) {
-      const error = new Error("Issue report not found.");
-      error.statusCode = 404;
-      throw error;
-    }
-
-    const STATUSES = [
-      "Submitted",
-      "Under Review",
-      "Confirmed",
-      "Feature Request",
-      "Rejected",
-      "Solved",
-    ];
-
-    const CLASSIFICATIONS = [
-      "Bug",
-      "Feature Request",
-      "Issue",
-      "Change Request",
-    ];
-
-    if (!STATUSES.includes(status)) {
-      const error = new Error("Invalid issue status.");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    if (classification != null && !CLASSIFICATIONS.includes(classification)) {
-      const error = new Error("Invalid issue classification.");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    await issue.update({
-      status,
-      classification,
-    });
-    console.log(issue);
-    return issue;
-  } catch (talha) {
-    console.error("Update issue status error:", talha);
-    throw talha;
+  if (!issue) {
+    throw new BugServiceError("Issue report not found.", 404);
   }
-}
-async function createBugByTester(data) {
-  try {
-    const {
-      projectId,
-      moduleId,
-      severity = "Medium",
-      title,
-      status = "Open",
-      discoverySource = "Testing",
-    } = data;
 
-    const project = await Project.findOne({
-      uuid: projectId,
-    });
-    const module = await ProjectModule.findOne({
-      uuid: moduleId,
-    });
+  const project = await findCompanyProject(issue.projectId, user.companyId);
 
-    const STATUSES = [
-      "Open",
-      "Assigned",
-      "In Progress",
-      "Fixed",
-      "Ready for Retest",
-      "Reopened",
-      "Closed",
-      "Rejected",
-    ];
-
-    const SEVERITIES = ["Low", "Medium", "High", "Critical"];
-
-    const DISCOVERY_SOURCES = [
-      "Client",
-      "Testing",
-      "Development",
-      "Code Review",
-      "Production",
-      "Retesting",
-    ];
-
-    if (!project) {
-      const talha = new Error("Project ID is required.");
-      talha.statusCode = 400;
-      throw talha;
-    }
-
-    if (!title || !title.trim()) {
-      const talha = new Error("Bug title is required.");
-      talha.statusCode = 400;
-      throw talha;
-    }
-
-    if (!STATUSES.includes(status)) {
-      const talha = new Error("Invalid bug status.");
-      talha.statusCode = 400;
-      throw talha;
-    }
-
-    if (!SEVERITIES.includes(severity)) {
-      const talha = new Error("Invalid bug severity.");
-      talha.statusCode = 400;
-      throw talha;
-    }
-
-    if (!DISCOVERY_SOURCES.includes(discoverySource)) {
-      const talha = new Error("Invalid discovery source.");
-      talha.statusCode = 400;
-      throw talha;
-    }
-
-    const bug = await ProjectBug.create({
-      projectId: project.id,
-      moduleId: module.id ?? null,
-      severity,
-      title: title.trim(),
-      status,
-      discoverySource,
-    });
-
-    return bug;
-  } catch (talha) {
-    console.error("Create bug by tester error:", talha);
-    throw talha;
+  if (!project) {
+    throw new BugServiceError("Issue report not found.", 404);
   }
+
+  await assertTesterOfProject(user, project.id);
+
+  const ISSUE_STATUSES = [
+    "Submitted",
+    "Under Review",
+    "Confirmed",
+    "Feature Request",
+    "Rejected",
+    "Solved",
+  ];
+
+  const CLASSIFICATIONS = [
+    "Bug",
+    "Feature Request",
+    "Issue",
+    "Change Request",
+  ];
+
+  if (!ISSUE_STATUSES.includes(status)) {
+    throw new BugServiceError("Invalid issue status.", 400);
+  }
+
+  if (classification != null && !CLASSIFICATIONS.includes(classification)) {
+    throw new BugServiceError("Invalid issue classification.", 400);
+  }
+
+  await issue.update({
+    status,
+    classification,
+  });
+
+  return issue;
 }
-async function getBugsInTester(userId) {
-  try {
-    const employee = await Employee.findOne({
-      where: {
-        userId,
-      },
-    });
 
-    if (!employee) {
-      return [];
-    }
+function validateTesterBug({ title, status, severity, discoverySource }) {
+  if (!title || !title.trim()) {
+    throw new BugServiceError("Bug title is required.", 400);
+  }
 
-    const projectOperations = await ProjectOperationTester.findAll({
-      where: {
-        employee_id: employee.id,
-      },
-      attributes: ["projectOperationId"],
-      raw: true,
-    });
+  if (!STATUSES.includes(status)) {
+    throw new BugServiceError("Invalid bug status.", 400);
+  }
 
-    if (!projectOperations.length) {
-      return [];
-    }
+  if (!SEVERITIES.includes(severity)) {
+    throw new BugServiceError("Invalid bug severity.", 400);
+  }
 
-    const projectOperationIds = projectOperations.map(
-      (item) => item.projectOperationId,
-    );
-
-    const projects = await ProjectOperation.findAll({
-      where: {
-        id: {
-          [Op.in]: projectOperationIds,
-        },
-      },
-      attributes: ["projectId"],
-      raw: true,
-    });
-
-    if (!projects.length) {
-      return [];
-    }
-
-    const projectIds = [...new Set(projects.map((item) => item.projectId))];
-
-    const bugs = await ProjectBug.findAll({
-      where: {
-        projectId: {
-          [Op.in]: projectIds,
-        },
-      },
-      include: [
-        {
-          model: Project,
-          as: "project",
-          attributes: ["uuid", "name"],
-        },
-        {
-          model: ProjectModule,
-          as: "module",
-          attributes: ["uuid", "name"],
-          required: false,
-        },
-      ],
-    });
-
-    return bugs;
-  } catch (talha) {
-    console.log(talha);
-    throw talha;
+  if (!DISCOVERY_SOURCES.includes(discoverySource)) {
+    throw new BugServiceError("Invalid discovery source.", 400);
   }
 }
 
-async function updateBugByTester(uuid, data) {
-  try {
-    const {
-      projectId,
-      moduleId,
-      severity,
-      title,
-      description,
-      status,
-      discoverySource,
-      fixNotes,
-    } = data;
+// Tester creates a bug in a project they are assigned to.
+// It is always saved Open + unassigned, so it goes to the project lead —
+// testers never assign developers.
+async function createBugByTester(data, user) {
+  const {
+    projectId,
+    moduleId,
+    severity = "Medium",
+    title,
+    description,
+    discoverySource = "Testing",
+  } = data;
 
-    const project = await Project.findOne({
-      uuid: projectId,
-    });
-    const module = await ProjectModule.findOne({
-      uuid: moduleId,
-    });
+  const project = await getCompanyProject(projectId, user.companyId);
+  await assertTesterOfProject(user, project.id);
 
-    const STATUSES = [
-      "Open",
-      "Assigned",
-      "In Progress",
-      "Fixed",
-      "Ready for Retest",
-      "Reopened",
-      "Closed",
-      "Rejected",
-    ];
+  const module = await getProjectModule(moduleId, project.id);
 
-    const SEVERITIES = ["Low", "Medium", "High", "Critical"];
+  validateTesterBug({ title, status: "Open", severity, discoverySource });
 
-    const DISCOVERY_SOURCES = [
-      "Client",
-      "Testing",
-      "Development",
-      "Code Review",
-      "Production",
-      "Retesting",
-    ];
+  return ProjectBug.create({
+    projectId: project.id,
+    moduleId: module?.id ?? null,
+    severity,
+    title: title.trim(),
+    description: description?.trim() || null,
+    status: "Open",
+    discoverySource,
+    assignedTo: null,
+  });
+}
 
-    if (!project) {
-      const talha = new Error("Project ID is required.");
-      talha.statusCode = 400;
-      throw talha;
-    }
+// Bugs of every project the tester is assigned to
+async function getBugsInTester(userId, companyId) {
+  const employee = await findActiveEmployee(userId, companyId);
 
-    if (!title || !title.trim()) {
-      const talha = new Error("Bug title is required.");
-      talha.statusCode = 400;
-      throw talha;
-    }
+  if (!employee) {
+    return [];
+  }
 
-    if (!STATUSES.includes(status)) {
-      const talha = new Error("Invalid bug status.");
-      talha.statusCode = 400;
-      throw talha;
-    }
+  const projectIds = await getTesterProjectIds(employee.id, companyId);
 
-    if (!SEVERITIES.includes(severity)) {
-      const talha = new Error("Invalid bug severity.");
-      talha.statusCode = 400;
-      throw talha;
-    }
+  if (!projectIds.length) {
+    return [];
+  }
 
-    if (!DISCOVERY_SOURCES.includes(discoverySource)) {
-      const talha = new Error("Invalid discovery source.");
-      talha.statusCode = 400;
-      throw talha;
-    }
+  return ProjectBug.findAll({
+    where: {
+      projectId: {
+        [Op.in]: projectIds,
+      },
+    },
+    include: [
+      {
+        model: Project,
+        as: "project",
+        attributes: ["uuid", "name"],
+      },
+      {
+        model: ProjectModule,
+        as: "module",
+        attributes: ["uuid", "name"],
+        required: false,
+      },
+    ],
+  });
+}
+
+/**
+ * What a tester may do to a bug's status:
+ *  - keep the current status (edit details only)
+ *  - Ready for Retest → Closed (fix passed) | Reopened (fix failed)
+ *  - Open (not yet with a developer) → Rejected (withdrawn)
+ * Reopened clears the assignee so the bug goes back to the project lead.
+ */
+const TESTER_TRANSITIONS = {
+  "Ready for Retest": ["Closed", "Reopened"],
+  Open: ["Rejected"],
+};
+
+// Tester edits a bug of a project they are assigned to
+async function updateBugByTester(uuid, data, user) {
+  const {
+    projectId,
+    moduleId,
+    severity,
+    title,
+    description,
+    status,
+    discoverySource,
+    fixNotes,
+    testNotes,
+  } = data;
+
+  return sequelize.transaction(async (transaction) => {
     const bug = await ProjectBug.findOne({
       where: {
         uuid,
       },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
     });
 
-    await bug.update({
+    if (!bug) {
+      throw new BugServiceError("Bug not found.", 404);
+    }
+
+    // The bug's project must be one the tester works on
+    const project = await findCompanyProject(
+      bug.projectId,
+      user.companyId,
+      transaction,
+    );
+
+    if (!project) {
+      throw new BugServiceError("Bug not found.", 404);
+    }
+
+    await assertTesterOfProject(user, project.id);
+
+    // A bug stays in its project (its lead and developers belong to it)
+    if (
+      projectId !== undefined &&
+      projectId !== null &&
+      projectId !== "" &&
+      String(projectId) !== String(project.id) &&
+      String(projectId) !== String(project.uuid)
+    ) {
+      throw new BugServiceError(
+        "A bug can't be moved to another project.",
+        400,
+      );
+    }
+
+    const nextStatus = status ?? bug.status;
+
+    if (
+      nextStatus !== bug.status &&
+      !(TESTER_TRANSITIONS[bug.status] || []).includes(nextStatus)
+    ) {
+      throw new BugServiceError(
+        `A tester can't change a bug from "${bug.status}" to "${nextStatus}".`,
+        409,
+      );
+    }
+
+    const module = await getProjectModule(moduleId, project.id, transaction);
+
+    validateTesterBug({
+      title,
+      status: nextStatus,
+      severity,
+      discoverySource,
+    });
+
+    const updates = {
       description,
       fixNotes,
       title,
-      status,
+      status: nextStatus,
       severity,
       discoverySource,
-      moduleId: module.id ?? null,
-      projectId: project.id,
-    });
-  } catch (talha) {
-    console.log(talha);
-  }
+      moduleId: module?.id ?? null,
+    };
+
+    // Fix failed → back to the project lead to reassign
+    if (nextStatus === "Reopened") {
+      updates.assignedTo = null;
+    }
+
+    // Record the retest result on the open retest attempt
+    if (bug.status === "Ready for Retest" && nextStatus !== bug.status) {
+      const attempt = await BugTesting.findOne({
+        where: { bugId: bug.id, status: { [Op.in]: ["Pending", "In Progress"] } },
+        order: [["attemptNumber", "DESC"]],
+        transaction,
+      });
+
+      if (attempt) {
+        await attempt.update(
+          {
+            status: nextStatus === "Closed" ? "Passed" : "Failed",
+            testNotes: testNotes?.trim() || attempt.testNotes || null,
+            testedAt: new Date(),
+          },
+          { transaction },
+        );
+      }
+    }
+
+    await bug.update(updates, { transaction });
+
+    return bug;
+  });
 }
 
 const createServiceError = (message, statusCode = 400) => {
@@ -722,8 +1044,6 @@ const createIssueReport = async (user, payload) => {
     severity = "Medium",
     classification = "Bug",
   } = payload;
-
-  console.log(classification);
 
   if (!projectId) {
     throw createServiceError("Project is required.");
