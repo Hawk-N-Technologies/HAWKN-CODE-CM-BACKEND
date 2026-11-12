@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 require("dotenv").config();
 const sequelize = require("./config/db");
 const { Sequelize } = require("@sequelize/core");
@@ -53,12 +54,35 @@ require("./models/associations");
 const responseStandards = require("./middleware/responseStandards");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
 const app = express();
+// Security headers. This server is a JSON/file API (no HTML pages), so:
+//  - contentSecurityPolicy off: protects HTML pages only, and can break the
+//    browser's PDF viewer when a BRD is opened in a new tab
+//  - crossOriginResourcePolicy "same-site": the portal on another
+//    *.hawkntechnologies.com subdomain can still load files from this API
+// Everything else (nosniff, anti-clickjacking, HSTS, no X-Powered-By, …) stays on.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "same-site" },
+  }),
+);
+
+// Extra allowed frontends can be added with FRONTEND_URL (comma-separated)
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://clientportal.hawkntechnologies.com",
+  ...(process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "https://clientportal.hawkntechnologies.com",
-    ],
+    origin: allowedOrigins,
+    // Login uses an HttpOnly cookie — the browser only sends it cross-origin
+    // when the server allows credentials
+    credentials: true,
   }),
 );
 
