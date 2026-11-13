@@ -68,6 +68,15 @@ All under `/api/v1/`. Admin-only unless noted.
 | GET | `/product-uids/{uid}` | With box and scan history |
 | POST | `/product-uids/{uid}/void` | `{reason}`; only unused UIDs |
 | GET | `/uid-capacity` | Used / remaining of 900,000 |
+| GET, POST | `/box-configurations` | `{code, name, items:[{sku_id, quantity}], notes}` creates version 1 |
+| GET, PATCH | `/box-configurations/{id}` | `{name, is_active}`; cannot deactivate while a section uses it |
+| POST | `/box-configurations/{id}/versions` | `{items, notes, apply_to_sections}`; new version (old ones never change) |
+| GET, POST | `/sections` | `{code, name, active_config_version_id}` |
+| PATCH | `/sections/{id}` | `{name, is_active, active_config_version_id}`; open box keeps its version |
+| POST | `/sections/{id}/operators` | `{user_id}` (operators only) |
+| DELETE | `/sections/{id}/operators/{user_id}` | |
+| GET, POST | `/users?role=` | `{username, password, role, first_name, last_name}` |
+| PATCH | `/users/{id}` | `{first_name, last_name, role, is_active, password}`; cannot lock yourself out |
 | GET | `/my/sections` | Operator/admin; sections + open box |
 | POST | `/sections/{id}/boxes` | Operator/admin; 201 new box or 200 open box |
 | GET | `/boxes/{public_id}` | Operator/admin; progress and items |
