@@ -75,6 +75,12 @@ All under `/api/v1/`. Admin-only unless noted.
 | DELETE | `/boxes/{public_id}/items/{uid}` | `{reason}`; open box only |
 | POST | `/boxes/{public_id}/complete` | Safe to repeat |
 | POST | `/boxes/{public_id}/cancel` | `{reason}` |
+| GET | `/product-uids/{uid}/qr.svg` | QR image (SVG) |
+| GET | `/boxes/{box_uid}/qr.svg` | Box QR image; operator of that section or admin |
+| GET | `/uid-batches/{id}/labels?page=` | Label data + QR SVGs, 1000 per page |
+| GET | `/boxes/{public_id}/label` | 1 x 1 inch box label data; completed boxes only |
+
+QR codes are generated on request from the identifier (error correction M, 29 x 29 modules) and never stored.
 
 Not logged in → 401 `NOT_AUTHENTICATED`. Wrong role → 403 `PERMISSION_DENIED`.
 With `DJANGO_DEBUG=true`, these URLs also open as clickable pages in the browser.
