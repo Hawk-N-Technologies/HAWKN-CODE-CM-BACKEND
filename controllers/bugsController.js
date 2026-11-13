@@ -567,7 +567,49 @@ const getClientIssueReports = async (req, res) => {
   }
 };
 
+// Tester → Retesting: bugs sent for retest + latest attempt
+const getRetestQueue = async (req, res) => {
+  try {
+    const data = await bugsService.getRetestQueue(req.user);
+
+    return res.status(200).json({
+      success: true,
+      message: "Retest queue fetched successfully.",
+      data,
+    });
+  } catch (error) {
+    logger.error("Get retest queue error", { error: error?.message, stack: error?.stack });
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : "Failed to fetch retest queue.",
+    });
+  }
+};
+
+// Tester records Passed / Failed for a bug waiting for retest
+const recordRetestResult = async (req, res) => {
+  try {
+    const data = await bugsService.recordRetestResult(req.params.uuid, req.body || {}, req.user);
+
+    return res.status(200).json({
+      success: true,
+      message: data.result === "Passed" ? "Retest passed — bug closed." : "Retest failed — bug sent back to the project lead.",
+      data,
+    });
+  } catch (error) {
+    logger.error("Record retest result error", { error: error?.message, stack: error?.stack });
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : "Failed to record retest result.",
+    });
+  }
+};
+
 module.exports = {
+  getRetestQueue,
+  recordRetestResult,
   reportBug,
   fetchProjectBugs,
   getDevelopers,

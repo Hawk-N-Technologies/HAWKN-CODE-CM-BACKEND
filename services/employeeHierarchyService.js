@@ -186,8 +186,23 @@ async function deleteHierarchyImage(companyId, imageUuid) {
   }
 }
 
+// One active image of THIS company (for viewing the file)
+async function getHierarchyImage(companyId, imageUuid) {
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  if (!companyId || !UUID_RE.test(String(imageUuid || ""))) return null;
+
+  return EmployeeHierarchyImage.findOne({
+    where: { uuid: imageUuid, companyId, isActive: true },
+    attributes: ["uuid", "fileUrl", "storageKey", "mimeType", "originalFileName"],
+  });
+}
+
 module.exports = {
   getHierarchyImages,
   uploadHierarchyImages,
   deleteHierarchyImage,
+  getHierarchyImage,
 };
+
