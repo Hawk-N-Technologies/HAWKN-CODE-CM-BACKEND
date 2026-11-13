@@ -68,6 +68,13 @@ All under `/api/v1/`. Admin-only unless noted.
 | GET | `/product-uids/{uid}` | With box and scan history |
 | POST | `/product-uids/{uid}/void` | `{reason}`; only unused UIDs |
 | GET | `/uid-capacity` | Used / remaining of 900,000 |
+| GET | `/my/sections` | Operator/admin; sections + open box |
+| POST | `/sections/{id}/boxes` | Operator/admin; 201 new box or 200 open box |
+| GET | `/boxes/{public_id}` | Operator/admin; progress and items |
+| POST | `/boxes/{public_id}/scans` | `{raw_value, client_scan_id}` |
+| DELETE | `/boxes/{public_id}/items/{uid}` | `{reason}`; open box only |
+| POST | `/boxes/{public_id}/complete` | Safe to repeat |
+| POST | `/boxes/{public_id}/cancel` | `{reason}` |
 
 Not logged in → 401 `NOT_AUTHENTICATED`. Wrong role → 403 `PERMISSION_DENIED`.
 With `DJANGO_DEBUG=true`, these URLs also open as clickable pages in the browser.
