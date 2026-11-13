@@ -129,7 +129,8 @@ X_FRAME_OPTIONS = "DENY"
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
+        # Session cookie login; answers 401 when not logged in.
+        "apps.accounts.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
