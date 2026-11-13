@@ -47,6 +47,31 @@ python manage.py create_ampl_user --username operator1 --role OPERATOR --section
 Admins can sign in at <http://localhost:8010/admin/> to manage SKUs, box configurations and sections
 until the React admin screens arrive (M7).
 
+## API (so far)
+
+All under `/api/v1/`. Admin-only unless noted.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/health` | Public |
+| GET | `/auth/csrf` | Public; sets the CSRF cookie |
+| POST | `/auth/login` | Public; `{username, password}`; max 10 tries/min per IP |
+| POST | `/auth/logout` | Logged in |
+| GET | `/auth/me` | Logged in; user, role, sections |
+| GET, POST | `/skus` | `?q=&is_active=` / `{code, name, description}` |
+| GET, PATCH | `/skus/{id}` | Code cannot change |
+| POST | `/skus/{id}/uid-batches` | `{quantity}` 1-10000 |
+| GET | `/uid-batches?sku=` | |
+| GET | `/uid-batches/{id}` | With all UIDs |
+| GET | `/uid-batches/{id}/export.csv` | CSV download |
+| GET | `/product-uids?sku=&status=&batch=&q=` | |
+| GET | `/product-uids/{uid}` | With box and scan history |
+| POST | `/product-uids/{uid}/void` | `{reason}`; only unused UIDs |
+| GET | `/uid-capacity` | Used / remaining of 900,000 |
+
+Not logged in → 401 `NOT_AUTHENTICATED`. Wrong role → 403 `PERMISSION_DENIED`.
+With `DJANGO_DEBUG=true`, these URLs also open as clickable pages in the browser.
+
 ## Layout
 
 ```
