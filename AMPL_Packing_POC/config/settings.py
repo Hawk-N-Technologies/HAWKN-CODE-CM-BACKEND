@@ -34,6 +34,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.common",
     "apps.accounts",
+    "apps.catalog",
+    "apps.packing",
 ]
 
 MIDDLEWARE = [
@@ -85,6 +87,9 @@ DATABASES = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Reuse the prepared test database (see apps/common/test_runner.py).
+TEST_RUNNER = "apps.common.test_runner.KeepDbTestRunner"
 
 # ---------------------------------------------------------------------------
 # Auth: custom user model is set from day one (cannot be changed later).
@@ -169,5 +174,3 @@ LOGGING = {
         "django.db.backends": {"level": "WARNING"},
     },
 }
-# Reuse the prepared test database (see apps/common/test_runner.py)
-TEST_RUNNER = "apps.common.test_runner.KeepDbTestRunner"

@@ -24,7 +24,6 @@ python -c "import secrets; print(secrets.token_urlsafe(50))"   # paste into DJAN
 # then fill DB_PASSWORD (and DB_HOST / DB_PORT if not localhost:5432)
 
 # 4. Database tables
-python manage.py makemigrations accounts   # first time only; commit the generated file
 python manage.py migrate
 
 # 5. Tests
@@ -36,14 +35,27 @@ python manage.py runserver 8010
 
 Check: open <http://localhost:8010/api/v1/health>. It should show `"database": "ok"`.
 
-Optional: `python manage.py createsuperuser`, then sign in at <http://localhost:8010/admin/>.
+## Users
+
+No accounts are hard-coded. Create them with (password is asked for, hidden):
+
+```bash
+python manage.py create_ampl_user --username admin1 --role ADMIN
+python manage.py create_ampl_user --username operator1 --role OPERATOR --section A   # section must exist
+```
+
+Admins can sign in at <http://localhost:8010/admin/> to manage SKUs, box configurations and sections
+until the React admin screens arrive (M7).
 
 ## Layout
 
 ```
 config/          Django project: settings (all from environment), urls, wsgi/asgi
 apps/common/     Shared pieces: response envelope, error handler, pagination, health check
-apps/accounts/   Custom user model with role (ADMIN / OPERATOR)
+apps/accounts/   Custom user model with role (ADMIN / OPERATOR), create_ampl_user command
+apps/catalog/    SKUs, UID batches, product UIDs
+apps/packing/    Box configurations (versioned), sections, operators, boxes, box items,
+                 verifications, scan log
 tests/           Automated tests
 ```
 
