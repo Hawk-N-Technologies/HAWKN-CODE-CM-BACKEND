@@ -6,7 +6,7 @@ HTTP to service calls. Rejections come back as the standard error envelope
 with a `code` (e.g. SKU_QUANTITY_FULL) and HTTP 403/404/409/422.
 """
 from django.shortcuts import get_object_or_404
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsAmplUser
@@ -14,8 +14,8 @@ from apps.accounts.serializers import sections_for
 from apps.common.exceptions import AppError
 from apps.common.responses import success_response
 
-from .models import Box, PackingSection
-from .serializers import box_detail, section_payload
+from .models import Box, BoxVerification, PackingSection
+from .serializers import box_detail, box_record, section_payload
 from .services.box_service import (
     cancel_box,
     complete_box,
@@ -24,6 +24,8 @@ from .services.box_service import (
     start_box,
     user_can_pack,
 )
+from .services.verification_service import BOX_RELATED as RECORD_RELATED
+from .services.verification_service import lookup_box, record_verification
 
 BOX_RELATED = (
     "section", "config_version", "config_version__configuration",
@@ -139,3 +141,36 @@ class BoxCancelView(APIView):
         box = get_box_for(request.user, public_id)
         cancelled = cancel_box(box=box, user=request.user, reason=request.data.get("reason"))
         return success_response(box_detail(fresh_box(cancelled)), message="Box cancelled.")
+
+
+# ---------------------------------------------------------------------------
+# Verification (any AMPL admin or operator may verify any box)
+# ---------------------------------------------------------------------------
+class BoxLookupView(APIView):
+    """GET /boxes/lookup?code=BOX-000001 - the box record, from its label."""
+
+    permission_classes = [IsAmplUser]
+
+    def get(self, request):
+        box = lookup_box(raw_value=request.query_params.get("code", ""), user=request.user)
+        return success_response(box_record(box))
+
+
+class VerificationInput(serializers.Serializer):
+    method = serializers.ChoiceField(choices=BoxVerification.Method.choices)
+    result = serializers.ChoiceField(choices=BoxVerification.Result.choices)
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
+class BoxVerificationView(APIView):
+    """POST /boxes/{public_id}/verifications {method, result, notes}"""
+
+    permission_classes = [IsAmplUser]
+
+    def post(self, request, public_id):
+        box = get_object_or_404(Box.objects.select_related(*RECORD_RELATED), public_id=public_id)
+        payload = VerificationInput(data=request.data)
+        payload.is_valid(raise_exception=True)
+        updated = record_verification(box=box, user=request.user, **payload.validated_data)
+        data = box_record(Box.objects.select_related(*RECORD_RELATED).get(pk=updated.pk))
+        return success_response(data, message="Verification saved.", status=status.HTTP_201_CREATED)
