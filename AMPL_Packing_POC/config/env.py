@@ -2,7 +2,8 @@
 Small environment helpers.
 
 Reads AMPL_Packing_POC/.env (if present) into os.environ without overriding
-variables that are already set by the shell, Docker or the server.
+variables that are already set by the shell, Docker or the server. If the
+same key appears twice in .env, the last line wins.
 Kept dependency-free on purpose.
 """
 import os
@@ -16,6 +17,7 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 def load_env_file(path: Path) -> None:
     if not path.is_file():
         return
+    file_values = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -27,7 +29,9 @@ def load_env_file(path: Path) -> None:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
             value = value[1:-1]
-        os.environ.setdefault(key, value)
+        file_values[key] = value  # a later line for the same key wins
+    for key, value in file_values.items():
+        os.environ.setdefault(key, value)  # real environment variables still win
 
 
 def env_str(name: str, default: str | None = None, required: bool = False) -> str:

@@ -3,5 +3,4 @@ Django>=5.2,<5.3
 djangorestframework>=3.16,<4
 psycopg[binary]>=3.2,<4
 gunicorn>=23,<24
-# Added in later milestones:
-#   qrcode  (M5, QR label rendering)
+qrcode>=8,<9
