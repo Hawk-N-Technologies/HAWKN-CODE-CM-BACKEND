@@ -470,3 +470,123 @@ describe("Responses, timezone, security headers", () => {
     assert.equal(stranger.headers.get("access-control-allow-origin"), null);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// P3 (A) — pages connected to real data
+// ---------------------------------------------------------------------------
+
+describe("Project task list (Project Progress / Tasks pages)", () => {
+  it("returns the project's tasks in `data`", async () => {
+    const res = await S.leadA.request("GET", `/projects/${D.projectA.uuid}/tasks`);
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body.data), "data must be an array");
+    assert.ok(res.body.data.some((task) => task.title === "Build API"));
+  });
+
+  it("another company's lead still can't read them", async () => {
+    assert.equal((await S.leadB.request("GET", `/projects/${D.projectA.uuid}/tasks`)).status, 404);
+  });
+});
+
+describe("Retesting (tester)", () => {
+  const sendForRetest = async (title) => {
+    const created = await S.leadA.request("POST", "/bugs/createBug", {
+      projectId: D.projectA.uuid, title, severity: "Medium",
+      discoverySource: "Development", assignedTo: D.teamDevId,
+    });
+    const uuid = created.body.data.uuid;
+    await S.teamDev.request("PUT", `/bugs/developer/${uuid}/status`, { status: "Fixed" });
+    await S.leadA.request("PATCH", `/bugs/projects/${D.projectA.uuid}/bugs/${uuid}`, { status: "Ready for Retest" });
+    return uuid;
+  };
+
+  it("queue shows only the tester's projects, waiting bugs first", async () => {
+    const uuid = await sendForRetest("Retest me");
+    const mine = (await S.testerA.request("GET", "/bugs/tester/retests")).body.data;
+    const row = mine.find((item) => item.uuid === uuid);
+    assert.ok(row, "bug is in tester A's queue");
+    assert.equal(row.result, "Pending");
+    assert.equal(row.canRecord, true);
+    assert.equal(mine[0].canRecord, true);
+
+    const other = (await S.testerA2.request("GET", "/bugs/tester/retests")).body.data;
+    assert.ok(!other.some((item) => item.uuid === uuid), "tester A2 doesn't see it");
+  });
+
+  it("Failed needs a note, then goes back to the lead (Reopened, unassigned)", async () => {
+    const uuid = await sendForRetest("Fails retest");
+    assert.equal((await S.testerA.request("PATCH", `/bugs/tester/retests/${uuid}`, { result: "Failed" })).status, 400);
+
+    const failed = await S.testerA.request("PATCH", `/bugs/tester/retests/${uuid}`, { result: "Failed", testNotes: "Still broken" });
+    assert.equal(failed.status, 200);
+
+    const bug = await one(`SELECT status, assigned_to AS "assignedTo" FROM project_bugs WHERE uuid = :uuid`, { uuid });
+    assert.deepEqual(bug, { status: "Reopened", assignedTo: null });
+
+    // can't record twice
+    assert.equal((await S.testerA.request("PATCH", `/bugs/tester/retests/${uuid}`, { result: "Passed" })).status, 409);
+  });
+
+  it("Passed closes the bug; other testers and companies can't record", async () => {
+    const uuid = await sendForRetest("Passes retest");
+    assert.equal((await S.testerA2.request("PATCH", `/bugs/tester/retests/${uuid}`, { result: "Passed" })).status, 403);
+    assert.equal((await S.testerB.request("PATCH", `/bugs/tester/retests/${uuid}`, { result: "Passed" })).status, 404);
+
+    assert.equal((await S.testerA.request("PATCH", `/bugs/tester/retests/${uuid}`, { result: "Passed" })).status, 200);
+    const bug = await one(`SELECT status FROM project_bugs WHERE uuid = :uuid`, { uuid });
+    assert.equal(bug.status, "Closed");
+  });
+});
+
+describe("Employee hierarchy (admin uploads, HR views)", () => {
+  // smallest valid PNG (1×1 pixel)
+  const PNG = Buffer.from(
+    "89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000D4944415478DA63F8CFC0F01F0005000201E2D8E2A90000000049454E44AE426082",
+    "hex",
+  );
+
+  const upload = async (session, name, type, bytes) => {
+    const form = new FormData();
+    form.append("images", new Blob([bytes], { type }), name);
+    const res = await fetch(`${helpers.BASE}/company/hierarchy`, {
+      method: "POST",
+      headers: { Cookie: session.cookie },
+      body: form,
+    });
+    return { status: res.status, body: await res.json() };
+  };
+
+  it("admin uploads an image; HR can list and view it", async () => {
+    const res = await upload(S.adminA, "org.png", "image/png", PNG);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+
+    S.hrA = await helpers.Session.login("hr@gmail.com", "Hr@12345");
+    const list = await S.hrA.request("GET", "/company/hierarchy");
+    assert.equal(list.status, 200);
+    D.imageUuid = list.body.data[0].uuid;
+    assert.ok(!String(list.body.data[0].fileUrl).includes("/"), "no server path is exposed");
+
+    const file = await fetch(`${helpers.BASE}/company/hierarchy/${D.imageUuid}/file`, {
+      headers: { Cookie: S.hrA.cookie },
+    });
+    assert.equal(file.status, 200);
+    assert.equal(file.headers.get("content-type"), "image/png");
+  });
+
+  it("only admins upload; wrong file types get a clear 400", async () => {
+    assert.equal((await upload(S.hrA, "x.png", "image/png", PNG)).status, 403);
+
+    const bad = await upload(S.adminA, "notes.txt", "text/plain", Buffer.from("hi"));
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.message, /PNG, JPG or WEBP/);
+  });
+
+  it("other companies and other roles can't see it", async () => {
+    const otherCompany = await fetch(`${helpers.BASE}/company/hierarchy/${D.imageUuid}/file`, {
+      headers: { Cookie: S.adminB.cookie },
+    });
+    assert.equal(otherCompany.status, 404);
+    assert.equal((await S.leadA.request("GET", "/company/hierarchy")).status, 403);
+  });
+});

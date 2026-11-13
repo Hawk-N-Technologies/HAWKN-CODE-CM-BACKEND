@@ -1,4 +1,7 @@
+const path = require("path");
+const fs = require("fs");
 const employeeHierarchyService = require("../services/employeeHierarchyService");
+const { uploadDirectory } = require("../middleware/hierarchyUpload");
 
 const logger = require("../utils/logger");
 
@@ -55,8 +58,8 @@ async function uploadHierarchyImages(req, res, next) {
     const files = req.files.map(function (file) {
       return {
         originalFileName: file.originalname,
-        fileUrl: file.location || file.path,
-        storageKey: file.key || null,
+        fileUrl: file.filename,
+        storageKey: file.filename,
         mimeType: file.mimetype,
         fileSize: file.size,
       };
@@ -112,8 +115,43 @@ async function deleteHierarchyImage(req, res, next) {
   }
 }
 
+// Serve one hierarchy image of the user's company (admin + HR)
+async function getHierarchyImageFile(req, res, next) {
+  try {
+    const image = await employeeHierarchyService.getHierarchyImage(
+      req.user.companyId,
+      req.params.imageUuid,
+    );
+
+    if (!image) {
+      return res.status(404).json({ success: false, message: "Image not found" });
+    }
+
+    // basename: a stored name can never point outside the upload folder
+    const filePath = path.join(
+      uploadDirectory,
+      path.basename(image.storageKey || image.fileUrl || ""),
+    );
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: "Image file not found" });
+    }
+
+    res.setHeader("Content-Type", image.mimeType);
+    return res.sendFile(filePath);
+  } catch (error) {
+    logger.error("Get employee hierarchy image file failed", {
+      userId: req.user?.userId,
+      imageUuid: req.params.imageUuid,
+      error: error.message,
+    });
+    return next(error);
+  }
+}
+
 module.exports = {
   getHierarchyImages,
   uploadHierarchyImages,
   deleteHierarchyImage,
+  getHierarchyImageFile,
 };

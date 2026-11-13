@@ -111,4 +111,17 @@ router.patch(
   bugController.updateBugByTester,
 );
 
+// Tester → Retesting page
+router.get(
+  "/tester/retests",
+  authMiddleware(["tester"]),
+  bugController.getRetestQueue,
+);
+
+router.patch(
+  "/tester/retests/:uuid",
+  authMiddleware(["tester"]),
+  bugController.recordRetestResult,
+);
+
 module.exports = router;

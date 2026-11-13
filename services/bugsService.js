@@ -1016,6 +1016,169 @@ async function updateBugByTester(uuid, data, user) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Retesting (Tester → Retesting page)
+// Bugs the project lead sent for retest, with their latest retest attempt.
+// ---------------------------------------------------------------------------
+
+const ATTEMPT_RESULT = {
+  Pending: "Pending",
+  "In Progress": "Pending",
+  Passed: "Passed",
+  Failed: "Failed",
+};
+
+async function getRetestQueue(user) {
+  const employee = await findActiveEmployee(user.userId, user.companyId);
+
+  if (!employee) return [];
+
+  // Only projects this tester is assigned to
+  const projectIds = await getTesterProjectIds(employee.id, user.companyId);
+
+  if (!projectIds.length) return [];
+
+  const attempts = await BugTesting.findAll({
+    where: { projectId: { [Op.in]: projectIds } },
+    order: [["attemptNumber", "DESC"]],
+    limit: MAX_LIST_ROWS,
+    raw: true,
+  });
+
+  // Latest attempt per bug
+  const latestByBug = new Map();
+  for (const attempt of attempts) {
+    if (!latestByBug.has(attempt.bugId)) latestByBug.set(attempt.bugId, attempt);
+  }
+
+  if (!latestByBug.size) return [];
+
+  const bugs = await ProjectBug.findAll({
+    where: {
+      id: { [Op.in]: [...latestByBug.keys()] },
+      projectId: { [Op.in]: projectIds },
+    },
+    include: [
+      { model: Project, as: "project", attributes: ["uuid", "name"] },
+      {
+        model: ProjectModule,
+        as: "module",
+        attributes: ["uuid", "name"],
+        required: false,
+      },
+    ],
+  });
+
+  const rows = bugs.map((bug) => {
+    const attempt = latestByBug.get(bug.id);
+
+    return {
+      uuid: bug.uuid,
+      title: bug.title,
+      severity: bug.severity,
+      bugStatus: bug.status,
+      project: bug.project ? { uuid: bug.project.uuid, name: bug.project.name } : null,
+      module: bug.module ? { uuid: bug.module.uuid, name: bug.module.name } : null,
+      attemptNumber: attempt.attemptNumber,
+      result: ATTEMPT_RESULT[attempt.status] || "Pending",
+      testNotes: attempt.testNotes,
+      testedAt: attempt.testedAt,
+      // Only bugs waiting for retest can get a result
+      canRecord: bug.status === "Ready for Retest",
+    };
+  });
+
+  // Waiting first, then most recently tested
+  return rows.sort((a, b) => {
+    if (a.canRecord !== b.canRecord) return a.canRecord ? -1 : 1;
+    return new Date(b.testedAt || 0) - new Date(a.testedAt || 0);
+  });
+}
+
+/**
+ * Tester records a retest result:
+ *  - Passed → bug Closed
+ *  - Failed → bug Reopened + unassigned → back to the project lead
+ * Only for bugs "Ready for Retest" in a project the tester is assigned to.
+ */
+async function recordRetestResult(uuid, data, user) {
+  const { result } = data;
+  const testNotes = typeof data.testNotes === "string" ? data.testNotes.trim() : "";
+
+  if (!["Passed", "Failed"].includes(result)) {
+    throw new BugServiceError("Result must be Passed or Failed.", 400);
+  }
+
+  if (result === "Failed" && !testNotes) {
+    throw new BugServiceError("Add a note explaining why the retest failed.", 400);
+  }
+
+  return sequelize.transaction(async (transaction) => {
+    const bug = await ProjectBug.findOne({
+      where: { uuid },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!bug) throw new BugServiceError("Bug not found.", 404);
+
+    const project = await findCompanyProject(bug.projectId, user.companyId, transaction);
+
+    if (!project) throw new BugServiceError("Bug not found.", 404);
+
+    await assertTesterOfProject(user, project.id);
+
+    if (bug.status !== "Ready for Retest") {
+      throw new BugServiceError(
+        `This bug is "${bug.status}" — only bugs waiting for retest can get a result.`,
+        409,
+      );
+    }
+
+    let attempt = await BugTesting.findOne({
+      where: { bugId: bug.id, status: { [Op.in]: ["Pending", "In Progress"] } },
+      order: [["attemptNumber", "DESC"]],
+      transaction,
+    });
+
+    // Older data may have no open attempt — create it so history is complete
+    if (!attempt) {
+      attempt = await BugTesting.create(
+        {
+          projectId: project.id,
+          bugId: bug.id,
+          attemptNumber: await nextAttemptNumber(bug.id, transaction),
+          status: "Pending",
+        },
+        { transaction },
+      );
+    }
+
+    await attempt.update(
+      {
+        status: result,
+        testNotes: testNotes || null,
+        testedAt: new Date(),
+      },
+      { transaction },
+    );
+
+    await bug.update(
+      result === "Passed"
+        ? { status: "Closed" }
+        : { status: "Reopened", assignedTo: null },
+      { transaction },
+    );
+
+    return {
+      uuid: bug.uuid,
+      bugStatus: bug.status,
+      result,
+      attemptNumber: attempt.attemptNumber,
+    };
+  });
+}
+
 const createServiceError = (message, statusCode = 400) => {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -1162,4 +1325,6 @@ module.exports = {
   updateStatusDEV,
   createIssueReport,
   getClientIssueReports,
+  getRetestQueue,
+  recordRetestResult,
 };
