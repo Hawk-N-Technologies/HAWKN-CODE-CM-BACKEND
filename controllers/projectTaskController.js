@@ -50,7 +50,7 @@ const listProjectTasks = async (req, res) => {
 
     return res.status(200).json({
       count: data.length,
-      data: data,
+      data,
     });
   } catch (error) {
     return res.status(getErrorStatus(error)).json({
