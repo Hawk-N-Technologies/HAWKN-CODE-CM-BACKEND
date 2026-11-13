@@ -80,7 +80,9 @@ DATABASES = {
         "PASSWORD": env_str("DB_PASSWORD", required=True),
         "HOST": env_str("DB_HOST", "localhost"),
         "PORT": env_str("DB_PORT", "5432"),
-        "CONN_MAX_AGE": env_int("DB_CONN_MAX_AGE", 60),
+        # 0 = close after each request. Required with runserver (one thread per request);
+        # set DB_CONN_MAX_AGE=60 on the server (gunicorn) to reuse connections.
+        "CONN_MAX_AGE": env_int("DB_CONN_MAX_AGE", 0),
         "CONN_HEALTH_CHECKS": True,
         "OPTIONS": {"connect_timeout": env_int("DB_CONNECT_TIMEOUT", 5)},
         "TEST": {"NAME": env_str("DB_TEST_NAME", "test_ampl_packing_poc")},

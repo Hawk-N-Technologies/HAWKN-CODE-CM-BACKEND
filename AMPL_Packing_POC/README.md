@@ -75,6 +75,8 @@ All under `/api/v1/`. Admin-only unless noted.
 | DELETE | `/boxes/{public_id}/items/{uid}` | `{reason}`; open box only |
 | POST | `/boxes/{public_id}/complete` | Safe to repeat |
 | POST | `/boxes/{public_id}/cancel` | `{reason}` |
+| GET | `/boxes/lookup?code=BOX-000001` | Any AMPL user; full box record from its label (logged) |
+| POST | `/boxes/{public_id}/verifications` | `{method: RECORD_CHECK or PHYSICAL_INSPECTION, result: MATCH or MISMATCH, notes}` |
 | GET | `/product-uids/{uid}/qr.svg` | QR image (SVG) |
 | GET | `/boxes/{box_uid}/qr.svg` | Box QR image; operator of that section or admin |
 | GET | `/uid-batches/{id}/labels?page=` | Label data + QR SVGs, 1000 per page |

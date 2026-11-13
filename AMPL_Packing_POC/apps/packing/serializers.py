@@ -1,5 +1,5 @@
 """Plain-dict builders for packing API responses."""
-from apps.packing.models import Box, BoxItem, ConfigurationItem
+from apps.packing.models import Box, BoxItem, BoxVerification, ConfigurationItem
 from apps.packing.services.box_service import box_progress
 
 
@@ -76,3 +76,40 @@ def section_payload(section, open_box=None) -> dict:
         if open_box
         else None,
     }
+
+
+def _verification_payload(verification):
+    if verification is None:
+        return None
+    return {
+        "method": verification.method,
+        "method_label": verification.get_method_display(),
+        "result": verification.result,
+        "notes": verification.notes,
+        "verified_by": _user_name(verification.verified_by),
+        "verified_at": verification.verified_at,
+    }
+
+
+def box_record(box: Box) -> dict:
+    """Everything the verification screen shows for one box."""
+    history = list(
+        BoxVerification.objects.filter(box_id=box.pk)
+        .select_related("verified_by")
+        .order_by("-verified_at", "-id")
+    )
+    latest = history[0] if history else None
+    if latest is None:
+        verification_status = "NOT_VERIFIED"
+    elif latest.result == BoxVerification.Result.MATCH:
+        verification_status = "VERIFIED"
+    else:
+        verification_status = "MISMATCH"
+    data = box_detail(box)
+    data.update({
+        "verification_status": verification_status,
+        "latest_verification": _verification_payload(latest),
+        "verifications": [_verification_payload(item) for item in history],
+        "basis": "DATABASE_RECORD",
+    })
+    return data
