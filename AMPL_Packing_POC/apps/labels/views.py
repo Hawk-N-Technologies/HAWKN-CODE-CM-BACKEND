@@ -109,7 +109,7 @@ class BatchLabelsView(APIView):
 
 
 class BoxLabelView(APIView):
-    """GET /boxes/{public_id}/label - data for the 1 x 1 inch box label."""
+    """GET /boxes/{public_id}/label - data for the 50 x 35 mm box label."""
 
     permission_classes = [IsAmplUser]
 

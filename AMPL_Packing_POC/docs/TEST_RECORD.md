@@ -13,8 +13,8 @@ Fill in each **Result** with ✅ Pass or ❌ Fail, and add a note for anything u
 | Laptop / browser | e.g. MacBook, Chrome |
 | Phone / browser | e.g. Android, Chrome |
 | Product label printer and sticker sheet | |
-| Box label printer (1 × 1 inch) | |
-| Automated tests (`python manage.py test`) | 142 tests — OK / failed |
+| Box label printer (50 × 35 mm labels) | |
+| Automated tests (`python manage.py test`) | 147 tests — OK / failed |
 
 ## A. Main flow (Phase 5)
 
@@ -29,7 +29,7 @@ Fill in each **Result** with ✅ Pass or ❌ Fail, and add a note for anything u
 | A7 | Start box | Section A → Start new box → Start camera → allow | Camera view opens; progress 0 / 25 | | |
 | A8 | Scan 25 labels | Point camera at each new label | Beep + green "Added" each time; progress reaches 25 / 25; "All quantities reached" | | |
 | A9 | Complete box | Confirm and complete box | Large box ID shown (e.g. BOX-000004) | | |
-| A10 | Print box label | Print box label (1 × 1 inch) → paper 1 × 1 in, scale 100%, margins None | One label: QR + box ID + BC2 · 25 pcs | | |
+| A10 | Print box label | Print box label (50 × 35 mm) → paper 50 × 35 mm, scale 100%, margins None | One label: QR on the left; box ID, configuration, quantity, section and date on the right | | |
 | A11 | Verify box | Verify a box → Scan box label → scan the printed sticker | Record shows box ID, BC2, Section A, packed time, operator, SKU001 expected 25 / actual 25 ✓, Product UIDs (25) | | |
 | A12 | Record verification | Record check → Match → Save | Badge changes to Verified | | |
 | A13 | Dashboard and history | Admin → Dashboard; Packing history | Counts updated; the new box listed as Verified, 25 / 25 | | |
@@ -62,7 +62,7 @@ Fill in each **Result** with ✅ Pass or ❌ Fail, and add a note for anything u
 | # | Case | How | Expected | Result | Notes |
 | --- | --- | --- | --- | --- | --- |
 | C1 | Data survives restart | Note dashboard numbers; stop backend and frontend (Ctrl + C); start both again | Same numbers; open box still open with the same items | | |
-| C2 | Box label readable | Scan the printed 1 × 1 inch label from 10–30 cm | Reads within 2 seconds | | |
+| C2 | Box label readable | Scan the printed 50 × 35 mm label from 10–30 cm | Reads within 2 seconds | | |
 | C3 | Product label readable | Scan 5 printed product labels | Each reads within 2 seconds | | |
 
 ## D. Production readiness (laptop)

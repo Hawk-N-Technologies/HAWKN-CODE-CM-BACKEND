@@ -100,4 +100,11 @@ def set_section_active(*, section, is_active):
             "This section has an open box. Complete or cancel it first.",
             HTTP_409,
         )
+    version = section.active_config_version
+    if is_active and version is not None and not version.configuration.is_active:
+        raise AppError(
+            "INVALID_CONFIGURATION",
+            f"This section uses {version.configuration.code}, which is inactive. Choose an active configuration first.",
+            HTTP_422,
+        )
     section.is_active = is_active
