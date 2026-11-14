@@ -158,6 +158,12 @@ def start_box(*, section, user):
                 "No box configuration is assigned to this section. Ask an admin.",
                 HTTP_409,
             )
+        if not version.configuration.is_active:
+            _fail(
+                "CONFIG_INACTIVE",
+                f"Box configuration {version.configuration.code} is inactive. Ask an admin.",
+                HTTP_409,
+            )
         if not ConfigurationItem.objects.filter(version_id=version.pk).exists():
             _fail("CONFIG_EMPTY", f"Configuration {version} has no SKUs.", HTTP_409)
 
@@ -192,11 +198,22 @@ def scan_product(*, box, raw_value, user, client_scan_id=""):
             _require_open(locked)
 
             # Network retry of a scan that already succeeded: same answer, no error.
-            if client_scan_id and ScanLog.objects.filter(
-                box_id=locked.pk, client_scan_id=str(client_scan_id)[:64],
-                action=ScanLog.Action.PRODUCT_SCAN, accepted=True,
+            # Only if that same product is still in this box (it may have been removed since).
+            previous_log = None
+            if client_scan_id:
+                previous_log = (
+                    ScanLog.objects.filter(
+                        box_id=locked.pk, client_scan_id=str(client_scan_id)[:64],
+                        action=ScanLog.Action.PRODUCT_SCAN, accepted=True,
+                        product_uid__uid=parsed.value,
+                    )
+                    .select_related("product_uid__sku")
+                    .first()
+                )
+            if previous_log and BoxItem.objects.filter(
+                box_id=locked.pk, product_uid_id=previous_log.product_uid_id
             ).exists():
-                previous = ProductUid.objects.select_related("sku").get(uid=parsed.value)
+                previous = previous_log.product_uid
                 return {
                     "accepted": True,
                     "duplicate_request": True,

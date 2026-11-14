@@ -2,7 +2,7 @@
 
 QR-based stock movement, packing and box verification for Hawk N Technologies.
 
-Every product gets a unique 6-digit QR code. Operators scan products into a box on their phone; the server checks every scan. A full box gets its own `BOX-000001` ID and a 1 × 1 inch label, which is later scanned to verify the box.
+Every product gets a unique 6-digit QR code. Operators scan products into a box on their phone; the server checks every scan. A full box gets its own `BOX-000001` ID and a 50 × 35 mm box label, which is later scanned to verify the box.
 
 - Python 3.12+, Django 5.2, Django REST Framework, Python `qrcode`
 - PostgreSQL database `ampl_packing_poc` (separate from the HawkN OS database)
@@ -47,7 +47,7 @@ Check: <http://localhost:8010/api/v1/health> shows `"database": "ok"`. Then star
 ## Tests
 
 ```bash
-python manage.py test          # 142 tests, reuses the test database
+python manage.py test          # 147 tests, reuses the test database
 ```
 
 The tests cover every packing rule, the database constraints, real simultaneous requests (double completion, the same product in two boxes) and every API endpoint.
