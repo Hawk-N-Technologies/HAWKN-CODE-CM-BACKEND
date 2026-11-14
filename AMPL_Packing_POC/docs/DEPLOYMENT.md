@@ -57,9 +57,14 @@ Run gunicorn under a process manager (systemd, supervisor or Docker) so it resta
 **With Docker instead:**
 
 ```bash
-docker build -t ampl-packing-poc-backend .
+# Build either from root directory or from inside AMPL_Packing_POC:
+# From root directory:
+docker build -f AMPL_Packing_POC/Dockerfile -t ampl-packing-poc-backend .
+# Or from inside AMPL_Packing_POC:
+# cd AMPL_Packing_POC && docker build -t ampl-packing-poc-backend .
+
 docker run -d --name ampl-backend --restart unless-stopped --env-file .env \
-  -p 127.0.0.1:18000:18000 -v /srv/ampl-packing/staticfiles:/app/staticfiles ampl-packing-poc-backend
+  -p 127.0.0.1:18000:18000 -v /srv/ampl-packing/staticfiles:/AMPL_Packing_POC/staticfiles ampl-packing-poc-backend
 ```
 
 The container applies migrations and collects static files every time it starts. It runs as user id 10001, so allow it to write the static folder once: `sudo mkdir -p /srv/ampl-packing/staticfiles && sudo chown 10001 /srv/ampl-packing/staticfiles`.
