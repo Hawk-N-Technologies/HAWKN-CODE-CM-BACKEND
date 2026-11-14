@@ -5,8 +5,8 @@ QR-based stock movement, packing and box verification for Hawk N Technologies.
 Every product gets a unique 6-digit QR code. Operators scan products into a box on their phone; the server checks every scan. A full box gets its own `BOX-000001` ID and a 50 × 35 mm box label, which is later scanned to verify the box.
 
 - Python 3.12+, Django 5.2, Django REST Framework, Python `qrcode`
-- PostgreSQL database `ampl_packing_poc` (separate from the HawkN OS database)
-- Fully independent of HawkN OS: own folder, database, process, port (8010) and cookie names
+- PostgreSQL database `ampl-poc` (separate from the HawkN OS database)
+- Fully independent of HawkN OS: own folder, database, process, port (18000) and cookie names
 - Frontend: `AMPL_Packing_POC/` in the HAWKN-CODE-CM-FRONTEND repo
 
 ## Documents
@@ -39,10 +39,10 @@ The database must exist first (see "Database permissions" below).
 
 ```bash
 source .venv/bin/activate
-python manage.py runserver 8010
+python manage.py runserver 18000
 ```
 
-Check: <http://localhost:8010/api/v1/health> shows `"database": "ok"`. Then start the frontend.
+Check: <http://localhost:18000/api/v1/health> shows `"database": "ok"`. Then start the frontend.
 
 ## Tests
 

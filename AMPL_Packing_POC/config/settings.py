@@ -5,6 +5,7 @@ All secrets and environment-specific values come from environment variables
 (or AMPL_Packing_POC/.env during local development). See .env.example.
 """
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from .env import env_bool, env_int, env_list, env_str, load_env_file
 
@@ -14,11 +15,17 @@ load_env_file(BASE_DIR / ".env")
 # ---------------------------------------------------------------------------
 # Core
 # ---------------------------------------------------------------------------
-SECRET_KEY = env_str("DJANGO_SECRET_KEY", required=True)
+SECRET_KEY = env_str(
+    "DJANGO_SECRET_KEY", "django-insecure-ampl-poc-key-change-in-production"
+)
 DEBUG = env_bool("DJANGO_DEBUG", default=False)
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+ALLOWED_HOSTS = env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    "ampl-pocapi.hawkntechnologies.com,ampl-poc.hawkntechnologies.com,localhost,127.0.0.1,testserver",
+)
 CSRF_TRUSTED_ORIGINS = env_list(
-    "DJANGO_CSRF_TRUSTED_ORIGINS", "http://localhost:5180,http://127.0.0.1:5180"
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    "https://ampl-poc.hawkntechnologies.com,https://ampl-pocapi.hawkntechnologies.com,http://localhost:5180,http://127.0.0.1:5180,http://localhost:18000,http://127.0.0.1:18000",
 )
 
 APP_NAME = "AMPL Packing POC"
@@ -31,6 +38,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "rest_framework",
     "apps.common",
     "apps.accounts",
@@ -41,6 +49,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -70,23 +79,49 @@ TEMPLATES = [
 ]
 
 # ---------------------------------------------------------------------------
-# Database: separate PostgreSQL database `ampl_packing_poc`.
-# Separate fields (not a URL) so passwords with special characters work as-is.
+# CORS (Cross-Origin Resource Sharing)
+# Needed because frontend (ampl-poc) and backend (ampl-pocapi) are separate domains.
 # ---------------------------------------------------------------------------
+CORS_ALLOWED_ORIGINS = env_list(
+    "DJANGO_CORS_ALLOWED_ORIGINS",
+    "https://ampl-poc.hawkntechnologies.com,http://localhost:5180,http://127.0.0.1:5180",
+)
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = env_bool("DJANGO_CORS_ALLOW_ALL", default=False)
+
+# ---------------------------------------------------------------------------
+# Database: PostgreSQL database `ampl-poc`.
+# Supports DATABASE_URL or individual DB_* environment variables.
+# ---------------------------------------------------------------------------
+_db_url = env_str("DATABASE_URL", "")
+if _db_url:
+    _parsed = urlparse(_db_url)
+    _default_db_user = unquote(_parsed.username or "")
+    _default_db_password = unquote(_parsed.password or "")
+    _default_db_host = _parsed.hostname or "194.164.148.10"
+    _default_db_port = str(_parsed.port or 17999)
+    _default_db_name = unquote(_parsed.path.lstrip("/") or "ampl-poc")
+else:
+    _default_db_user = "pocampl"
+    _default_db_password = "UBSMhLfgnOeDKeWi6BzH"
+    _default_db_host = "194.164.148.10"
+    _default_db_port = "17999"
+    _default_db_name = "ampl-poc"
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": env_str("DB_NAME", "ampl_packing_poc"),
-        "USER": env_str("DB_USER", required=True),
-        "PASSWORD": env_str("DB_PASSWORD", required=True),
-        "HOST": env_str("DB_HOST", "localhost"),
-        "PORT": env_str("DB_PORT", "5432"),
+        "NAME": env_str("DB_NAME", _default_db_name),
+        "USER": env_str("DB_USER", _default_db_user),
+        "PASSWORD": env_str("DB_PASSWORD", _default_db_password),
+        "HOST": env_str("DB_HOST", _default_db_host),
+        "PORT": env_str("DB_PORT", _default_db_port),
         # 0 = close after each request. Required with runserver (one thread per request);
         # set DB_CONN_MAX_AGE=60 on the server (gunicorn) to reuse connections.
         "CONN_MAX_AGE": env_int("DB_CONN_MAX_AGE", 0),
         "CONN_HEALTH_CHECKS": True,
         "OPTIONS": {"connect_timeout": env_int("DB_CONNECT_TIMEOUT", 5)},
-        "TEST": {"NAME": env_str("DB_TEST_NAME", "test_ampl_packing_poc")},
+        "TEST": {"NAME": env_str("DB_TEST_NAME", "test_ampl_poc")},
     }
 }
 
@@ -113,8 +148,10 @@ AUTH_PASSWORD_VALIDATORS = [
 SESSION_COOKIE_NAME = "ampl_sessionid"
 CSRF_COOKIE_NAME = "ampl_csrftoken"
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SAMESITE = env_str("DJANGO_SESSION_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_SAMESITE = env_str("DJANGO_CSRF_COOKIE_SAMESITE", "Lax")
+SESSION_COOKIE_DOMAIN = env_str("DJANGO_SESSION_COOKIE_DOMAIN", "") or None
+CSRF_COOKIE_DOMAIN = env_str("DJANGO_CSRF_COOKIE_DOMAIN", "") or None
 COOKIE_SECURE = env_bool("DJANGO_COOKIE_SECURE", default=not DEBUG)
 SESSION_COOKIE_SECURE = COOKIE_SECURE
 CSRF_COOKIE_SECURE = COOKIE_SECURE

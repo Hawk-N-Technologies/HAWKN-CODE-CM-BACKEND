@@ -5,15 +5,14 @@ Where to host is the HawkN team's decision. This guide describes what the app ne
 ## 1. What runs where
 
 ```
-Phone / laptop browser  ──HTTPS──▶  nginx (port 443)
-                                      ├── /            React app (static files from `npm run build`)
-                                      ├── /api/, /admin/  ──▶ gunicorn + Django (127.0.0.1:8010)
-                                      └── /static/     Django admin CSS/JS (from `collectstatic`)
-Django ──▶ PostgreSQL database `ampl_packing_poc` (existing HawkN server, own user)
+Frontend: https://ampl-poc.hawkntechnologies.com (React app)
+Backend:  https://ampl-pocapi.hawkntechnologies.com (Django + gunicorn on port 18000)
+Database: PostgreSQL ampl-poc on 194.164.148.10:17999 (user: pocampl)
 ```
 
 - **HTTPS is required.** Phone cameras only work on `https://` pages.
-- **One address for everything.** The React app and the API must be on the same domain, because login uses cookies.
+- **Backend API:** Bound to port 18000, exposed under `ampl-pocapi.hawkntechnologies.com`.
+- **CORS & Cookies:** CORS is enabled for `https://ampl-poc.hawkntechnologies.com`. Cookies are shared across `*.hawkntechnologies.com` domain.
 - HawkN OS is not touched: separate database, separate process, separate port, different cookie names.
 
 ## 2. Server requirements
@@ -50,7 +49,7 @@ python manage.py check --deploy            # must say: no issues (1 silenced)
 python manage.py migrate
 python manage.py collectstatic --noinput   # copies admin CSS/JS into staticfiles/
 python manage.py create_ampl_user --username admin1 --role ADMIN
-gunicorn config.wsgi:application --bind 127.0.0.1:8010 --workers 3 --timeout 30
+gunicorn config.wsgi:application --bind 127.0.0.1:18000 --workers 3 --timeout 30
 ```
 
 Run gunicorn under a process manager (systemd, supervisor or Docker) so it restarts on reboot.
@@ -60,7 +59,7 @@ Run gunicorn under a process manager (systemd, supervisor or Docker) so it resta
 ```bash
 docker build -t ampl-packing-poc-backend .
 docker run -d --name ampl-backend --restart unless-stopped --env-file .env \
-  -p 127.0.0.1:8010:8010 -v /srv/ampl-packing/staticfiles:/app/staticfiles ampl-packing-poc-backend
+  -p 127.0.0.1:18000:18000 -v /srv/ampl-packing/staticfiles:/app/staticfiles ampl-packing-poc-backend
 ```
 
 The container applies migrations and collects static files every time it starts. It runs as user id 10001, so allow it to write the static folder once: `sudo mkdir -p /srv/ampl-packing/staticfiles && sudo chown 10001 /srv/ampl-packing/staticfiles`.
