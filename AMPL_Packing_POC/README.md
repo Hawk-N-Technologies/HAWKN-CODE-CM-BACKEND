@@ -77,6 +77,9 @@ All under `/api/v1/`. Admin-only unless noted.
 | DELETE | `/sections/{id}/operators/{user_id}` | |
 | GET, POST | `/users?role=` | `{username, password, role, first_name, last_name}` |
 | PATCH | `/users/{id}` | `{first_name, last_name, role, is_active, password}`; cannot lock yourself out |
+| GET | `/dashboard/summary` | Admin; UID and box counts, today's totals, UID capacity |
+| GET | `/boxes?status=&section=&operator=&date_from=&date_to=&q=` | Admin; packing history (status also accepts MISMATCH) |
+| GET | `/scan-logs?accepted=&action=&q=&date_from=&date_to=` | Admin; audit trail of every scan and action |
 | GET | `/my/sections` | Operator/admin; sections + open box |
 | POST | `/sections/{id}/boxes` | Operator/admin; 201 new box or 200 open box |
 | GET | `/boxes/{public_id}` | Operator/admin; progress and items |
@@ -103,6 +106,7 @@ config/          Django project: settings (all from environment), urls, wsgi/asg
 apps/common/     Shared pieces: response envelope, error handler, pagination, health check
 apps/accounts/   Custom user model with role (ADMIN / OPERATOR), create_ampl_user command
 apps/catalog/    SKUs, UID batches, product UIDs
+apps/reports/    Dashboard counters, packing history, scan log
 apps/packing/    Box configurations (versioned), sections, operators, boxes, box items,
                  verifications, scan log
 tests/           Automated tests
