@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.catalog",
     "apps.packing",
     "apps.labels",
+    "apps.reports",
 ]
 
 MIDDLEWARE = [
