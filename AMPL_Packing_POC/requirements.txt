@@ -1,0 +1,6 @@
+# AMPL Packing POC backend. Python 3.12+.
+Django>=5.2,<5.3
+djangorestframework>=3.16,<4
+psycopg[binary]>=3.2,<4
+gunicorn>=23,<24
+qrcode>=8,<9
