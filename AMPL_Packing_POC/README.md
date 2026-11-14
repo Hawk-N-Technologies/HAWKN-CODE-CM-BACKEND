@@ -1,149 +1,154 @@
 # AMPL Packing POC — Backend
 
-QR-based stock movement, packing and box verification API for Hawk N Technologies.
+QR-based stock movement, packing and box verification for Hawk N Technologies.
 
-- Python 3.12+, Django 5.2, Django REST Framework
+Every product gets a unique 6-digit QR code. Operators scan products into a box on their phone; the server checks every scan. A full box gets its own `BOX-000001` ID and a 1 × 1 inch label, which is later scanned to verify the box.
+
+- Python 3.12+, Django 5.2, Django REST Framework, Python `qrcode`
 - PostgreSQL database `ampl_packing_poc` (separate from the HawkN OS database)
-- Runs on its own; shares no code, tables, cookies or ports with HawkN OS.
+- Fully independent of HawkN OS: own folder, database, process, port (8010) and cookie names
+- Frontend: `AMPL_Packing_POC/` in the HAWKN-CODE-CM-FRONTEND repo
 
-## First-time setup
+## Documents
 
-Run these from inside `AMPL_Packing_POC/`.
+| File | What it is |
+| --- | --- |
+| `docs/TEST_RECORD.md` | End-to-end test checklist with pass/fail columns |
+| `docs/DEPLOYMENT.md` | How to run it on a server (nginx, gunicorn, HTTPS, backups) |
+| `docs/production.env.example` | Production settings template |
+
+## First-time setup (development)
+
+Run from inside `AMPL_Packing_POC/`.
 
 ```bash
-# 1. Virtual environment
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
-# 2. Packages
+source .venv/bin/activate                  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# 3. Settings
 cp .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(50))"   # paste into DJANGO_SECRET_KEY
-# then fill DB_PASSWORD (and DB_HOST / DB_PORT if not localhost:5432)
-
-# 4. Database tables
+# fill DB_PASSWORD (and DB_HOST / DB_PORT if not localhost:5432)
 python manage.py migrate
+python manage.py create_ampl_user --username admin1 --role ADMIN
+python manage.py create_ampl_user --username operator1 --role OPERATOR   # assign a section later in the app
+```
 
-# 5. Tests
-python manage.py test
+The database must exist first (see "Database permissions" below).
 
-# 6. Run
+## Daily use
+
+```bash
+source .venv/bin/activate
 python manage.py runserver 8010
 ```
 
-Check: open <http://localhost:8010/api/v1/health>. It should show `"database": "ok"`.
+Check: <http://localhost:8010/api/v1/health> shows `"database": "ok"`. Then start the frontend.
 
-## Users
-
-No accounts are hard-coded. Create them with (password is asked for, hidden):
+## Tests
 
 ```bash
-python manage.py create_ampl_user --username admin1 --role ADMIN
-python manage.py create_ampl_user --username operator1 --role OPERATOR --section A   # section must exist
+python manage.py test          # 142 tests, reuses the test database
 ```
 
-Admins can sign in at <http://localhost:8010/admin/> to manage SKUs, box configurations and sections
-until the React admin screens arrive (M7).
+The tests cover every packing rule, the database constraints, real simultaneous requests (double completion, the same product in two boxes) and every API endpoint.
 
-## API (so far)
+## Production check (on the laptop)
 
-All under `/api/v1/`. Admin-only unless noted.
+This runs Django's deployment safety check with production-style values, without changing `.env`:
 
-| Method | Path | Notes |
+```bash
+DJANGO_DEBUG=false DJANGO_ALLOWED_HOSTS=ampl-poc.example.com \
+DJANGO_CSRF_TRUSTED_ORIGINS=https://ampl-poc.example.com DJANGO_BEHIND_HTTPS_PROXY=true \
+DJANGO_COOKIE_SECURE=true DJANGO_SECURE_SSL_REDIRECT=true DJANGO_HSTS_SECONDS=3600 \
+DJANGO_HSTS_INCLUDE_SUBDOMAINS=true python manage.py check --deploy
+```
+
+Expected: `System check identified no issues (1 silenced).` The silenced item is HSTS "preload", which is a decision for the whole hawkntechnologies.com domain.
+
+## Settings (`.env`)
+
+| Variable | Development | Production |
 | --- | --- | --- |
-| GET | `/health` | Public |
-| GET | `/auth/csrf` | Public; sets the CSRF cookie |
-| POST | `/auth/login` | Public; `{username, password}`; max 10 tries/min per IP |
-| POST | `/auth/logout` | Logged in |
-| GET | `/auth/me` | Logged in; user, role, sections |
-| GET, POST | `/skus` | `?q=&is_active=` / `{code, name, description}` |
-| GET, PATCH | `/skus/{id}` | Code cannot change |
-| POST | `/skus/{id}/uid-batches` | `{quantity}` 1-10000 |
-| GET | `/uid-batches?sku=` | |
-| GET | `/uid-batches/{id}` | With all UIDs |
-| GET | `/uid-batches/{id}/export.csv` | CSV download |
-| GET | `/product-uids?sku=&status=&batch=&q=` | |
-| GET | `/product-uids/{uid}` | With box and scan history |
-| POST | `/product-uids/{uid}/void` | `{reason}`; only unused UIDs |
-| GET | `/uid-capacity` | Used / remaining of 900,000 |
-| GET, POST | `/box-configurations` | `{code, name, items:[{sku_id, quantity}], notes}` creates version 1 |
-| GET, PATCH | `/box-configurations/{id}` | `{name, is_active}`; cannot deactivate while a section uses it |
-| POST | `/box-configurations/{id}/versions` | `{items, notes, apply_to_sections}`; new version (old ones never change) |
-| GET, POST | `/sections` | `{code, name, active_config_version_id}` |
-| PATCH | `/sections/{id}` | `{name, is_active, active_config_version_id}`; open box keeps its version |
-| POST | `/sections/{id}/operators` | `{user_id}` (operators only) |
-| DELETE | `/sections/{id}/operators/{user_id}` | |
-| GET, POST | `/users?role=` | `{username, password, role, first_name, last_name}` |
-| PATCH | `/users/{id}` | `{first_name, last_name, role, is_active, password}`; cannot lock yourself out |
-| GET | `/dashboard/summary` | Admin; UID and box counts, today's totals, UID capacity |
-| GET | `/boxes?status=&section=&operator=&date_from=&date_to=&q=` | Admin; packing history (status also accepts MISMATCH) |
-| GET | `/scan-logs?accepted=&action=&q=&date_from=&date_to=` | Admin; audit trail of every scan and action |
-| GET | `/my/sections` | Operator/admin; sections + open box |
-| POST | `/sections/{id}/boxes` | Operator/admin; 201 new box or 200 open box |
-| GET | `/boxes/{public_id}` | Operator/admin; progress and items |
-| POST | `/boxes/{public_id}/scans` | `{raw_value, client_scan_id}` |
-| DELETE | `/boxes/{public_id}/items/{uid}` | `{reason}`; open box only |
-| POST | `/boxes/{public_id}/complete` | Safe to repeat |
-| POST | `/boxes/{public_id}/cancel` | `{reason}` |
-| GET | `/boxes/lookup?code=BOX-000001` | Any AMPL user; full box record from its label (logged) |
-| POST | `/boxes/{public_id}/verifications` | `{method: RECORD_CHECK or PHYSICAL_INSPECTION, result: MATCH or MISMATCH, notes}` |
-| GET | `/product-uids/{uid}/qr.svg` | QR image (SVG) |
-| GET | `/boxes/{box_uid}/qr.svg` | Box QR image; operator of that section or admin |
-| GET | `/uid-batches/{id}/labels?page=` | Label data + QR SVGs, 1000 per page |
-| GET | `/boxes/{public_id}/label` | 1 x 1 inch box label data; completed boxes only |
+| `DJANGO_SECRET_KEY` | random | different random value |
+| `DJANGO_DEBUG` | `true` | `false` |
+| `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | your domain |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | every address you open the app from (e.g. `https://192.168.1.20:5180` for the phone) | `https://your-domain` |
+| `DJANGO_COOKIE_SECURE` | `false` | `true` |
+| `DJANGO_BEHIND_HTTPS_PROXY`, `DJANGO_SECURE_SSL_REDIRECT` | `false` | `true` |
+| `DJANGO_HSTS_SECONDS` | `0` | `3600`, later `31536000` |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | your database | server database |
+| `DB_CONN_MAX_AGE` | `0` (required with `runserver`) | `60` |
 
-QR codes are generated on request from the identifier (error correction M, 29 x 29 modules) and never stored.
-
-Not logged in → 401 `NOT_AUTHENTICATED`. Wrong role → 403 `PERMISSION_DENIED`.
-With `DJANGO_DEBUG=true`, these URLs also open as clickable pages in the browser.
-
-## Layout
-
-```
-config/          Django project: settings (all from environment), urls, wsgi/asgi
-apps/common/     Shared pieces: response envelope, error handler, pagination, health check
-apps/accounts/   Custom user model with role (ADMIN / OPERATOR), create_ampl_user command
-apps/catalog/    SKUs, UID batches, product UIDs
-apps/reports/    Dashboard counters, packing history, scan log
-apps/packing/    Box configurations (versioned), sections, operators, boxes, box items,
-                 verifications, scan log
-tests/           Automated tests
-```
-
-## Conventions
-
-- All endpoints live under `/api/v1/`.
-- Success: `{"success": true, "data": ...}`. Error: `{"success": false, "code": "...", "message": "...", "errors": [...]}`.
-- All database tables are prefixed `ampl_`.
-- Cookies are `ampl_sessionid` and `ampl_csrftoken` so they never clash with HawkN OS.
-- Secrets only in `.env` (git-ignored) or server environment variables.
+If a setting appears twice in `.env`, the last line wins. Real environment variables beat the file.
 
 ## Database permissions
 
-On the shared server, new databases get a `public` schema owned by `postgres`, so ownership must be fixed once per database.
-Run as `postgres` in pgAdmin:
+`ampl_poc_user` must own `ampl_packing_poc` **and** its `public` schema (PostgreSQL 15+ only lets the owner create tables). Run as `postgres`:
 
 ```sql
 -- Query Tool opened on ampl_packing_poc
 ALTER DATABASE ampl_packing_poc OWNER TO ampl_poc_user;
 ALTER SCHEMA public OWNER TO ampl_poc_user;
-ALTER ROLE ampl_poc_user CREATEDB;
+ALTER ROLE ampl_poc_user CREATEDB;            -- development only, for tests
 
--- Query Tool opened on test_ampl_packing_poc (create it first if missing,
--- owner ampl_poc_user)
+-- Query Tool opened on test_ampl_packing_poc (create it first, owner ampl_poc_user)
 ALTER SCHEMA public OWNER TO ampl_poc_user;
 ```
 
-Tests reuse `test_ampl_packing_poc` instead of re-creating it (see `apps/common/test_runner.py`),
-so this setup is needed only once.
+Tests reuse `test_ampl_packing_poc` (see `apps/common/test_runner.py`), so this is needed once.
 
-## Docker
+## Layout
 
-```bash
-docker build -t ampl-packing-poc-backend .
-docker run --env-file .env -p 8010:8010 ampl-packing-poc-backend
+```
+config/          settings (all from environment), urls, wsgi/asgi, .env loader
+apps/common/     response envelope, error handler, pagination, health check, IdCounter
+apps/accounts/   user model (ADMIN / OPERATOR), login, users admin API, create_ampl_user command
+apps/catalog/    SKUs, UID batches, product UIDs, UID generation, CSV export
+apps/packing/    box configurations (versioned), sections, boxes, scanning rules, verification, scan log
+apps/labels/     QR codes (SVG) and label data for printing
+apps/reports/    dashboard counters, packing history, scan log API
+tests/           automated tests, one file per milestone
+docs/            test record, deployment guide, production settings template
 ```
 
-The container applies migrations on start. Production deployment is finalised in M9.
+## Business rules (enforced by the server and the database)
+
+- Product UIDs: unique, 6 digits, first digit 1–9; generated as a permutation, so they never repeat. 900,000 in total.
+- A product can be in only one box at a time; a section has only one open box.
+- Each scan is checked: format, exists, not void, not already in a box, SKU in the configuration, SKU count not full.
+- A box completes only when every SKU count matches exactly. Completion is atomic and safe to repeat; box IDs are gapless.
+- Configurations are versioned: a version used by a box never changes.
+- Every scan, rejection, completion, cancellation, lookup and verification is logged.
+
+## API
+
+All under `/api/v1/`. JSON envelope: `{"success": true, "data": …}` or `{"success": false, "code": "…", "message": "…", "errors": […]}`.
+Not logged in → 401 `NOT_AUTHENTICATED`. Wrong role → 403 `PERMISSION_DENIED`.
+
+| Area | Method and path | Who |
+| --- | --- | --- |
+| Health | `GET /health` | Public |
+| Login | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Public / logged in |
+| Users | `GET, POST /users`, `PATCH /users/{id}` | Admin |
+| SKUs | `GET, POST /skus`, `GET, PATCH /skus/{id}` | Admin |
+| UIDs | `POST /skus/{id}/uid-batches`, `GET /uid-batches`, `GET /uid-batches/{id}`, `GET /uid-batches/{id}/export.csv`, `GET /product-uids`, `GET /product-uids/{uid}`, `POST /product-uids/{uid}/void`, `GET /uid-capacity` | Admin |
+| Configurations | `GET, POST /box-configurations`, `GET, PATCH /box-configurations/{id}`, `POST /box-configurations/{id}/versions` | Admin |
+| Sections | `GET, POST /sections`, `PATCH /sections/{id}`, `POST /sections/{id}/operators`, `DELETE /sections/{id}/operators/{user_id}` | Admin |
+| Packing | `GET /my/sections`, `POST /sections/{id}/boxes`, `GET /boxes/{public_id}`, `POST /boxes/{public_id}/scans`, `DELETE /boxes/{public_id}/items/{uid}`, `POST /boxes/{public_id}/complete`, `POST /boxes/{public_id}/cancel` | Operator of the section, or admin |
+| Verification | `GET /boxes/lookup?code=`, `POST /boxes/{public_id}/verifications` | Any operator or admin |
+| Labels | `GET /product-uids/{uid}/qr.svg`, `GET /uid-batches/{id}/labels`, `GET /boxes/{box_uid}/qr.svg`, `GET /boxes/{public_id}/label` | Admin / operator of the section |
+| Reports | `GET /dashboard/summary`, `GET /boxes` (history), `GET /scan-logs` | Admin |
+
+With `DJANGO_DEBUG=true`, the API URLs also open as clickable pages in the browser.
+
+## Known limitations
+
+- **6-digit UIDs are not anti-counterfeit.** Anyone can print a QR with a valid-looking number. They are for tracking, not security.
+- **Capacity is 900,000 product UIDs** for the life of the system. The dashboard shows what is left.
+- **Verification checks the record, not the box.** Scanning a box label shows what the system recorded at packing. Only "Physical inspection" means someone opened and counted the box.
+- **Sticker sheet presets are starting values.** Print one test page and adjust the layout for your exact sheet.
+- **Printing uses the browser's print dialog.** There is no silent or automatic printing.
+- **One open box per section.** Several operators cannot pack separate boxes in the same section at the same time.
+- **The phone camera needs HTTPS.** Locally this uses a self-signed certificate (one-time warning on the phone); on a server, a real certificate.
+- **Vibration does not work on iPhone** (browser limitation). The sound and screen colours still work.
+- **There is no screen to void a UID.** The API exists (`POST /product-uids/{uid}/void`).

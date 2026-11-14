@@ -127,6 +127,16 @@ if env_bool("DJANGO_BEHIND_HTTPS_PROXY", default=False):
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
+SECURE_REFERRER_POLICY = "same-origin"
+
+# Production HTTPS hardening (all off by default for local development).
+# See docs/production.env.example and docs/DEPLOYMENT.md.
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=False)
+SECURE_HSTS_SECONDS = env_int("DJANGO_HSTS_SECONDS", 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_HSTS_INCLUDE_SUBDOMAINS", default=False)
+# HSTS "preload" is a decision for the whole hawkntechnologies.com domain,
+# not for this one sub-site, so its deploy-check warning is silenced.
+SILENCED_SYSTEM_CHECKS = ["security.W021"]
 
 # ---------------------------------------------------------------------------
 # Django REST Framework
