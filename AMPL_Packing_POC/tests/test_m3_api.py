@@ -219,11 +219,10 @@ class UidApiTests(ApiFixture):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response["Content-Type"].startswith("text/csv"))
         self.assertIn("attachment;", response["Content-Disposition"])
-        rows = list(csv.reader(io.StringIO(response.content.decode("utf-8"))))
-        # Only UIDs: one per line, no header, no other columns
-        self.assertEqual(len(rows), 25)
-        self.assertTrue(all(len(row) == 1 for row in rows))
-        self.assertEqual([row[0] for row in rows], [u["uid"] for u in detail["uids"]])
+        rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+        self.assertEqual(rows[0], ["uid", "sku_code", "sku_name", "status", "batch_id", "created_at"])
+        self.assertEqual(len(rows), 26)
+        self.assertEqual({row[0] for row in rows[1:]}, {u["uid"] for u in detail["uids"]})
 
     def test_csv_is_admin_only(self):
         batch_id = self.generate(1).json()["data"]["id"]
