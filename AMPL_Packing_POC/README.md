@@ -1,8 +1,8 @@
 # AMPL Packing POC — Backend
 
-QR-based stock movement, packing and box verification for Hawk N Technologies.
+QR-based stock movement and box packing for Hawk N Technologies.
 
-Every product gets a unique 6-digit QR code. Operators scan products into a box on their phone; the server checks every scan. A full box gets its own `BOX-000001` ID and a 50 × 35 mm box label, which is later scanned to verify the box.
+Every product gets a unique 6-digit QR code. Operators scan products into a box on their phone; the server checks every scan. When the last item is scanned, the box is saved automatically with its own `BOX-000001` ID and a 50 × 35 mm box label. Scanning any box or item label later shows its details.
 
 - Python 3.12+, Django 5.2, Django REST Framework, Python `qrcode`
 - PostgreSQL database `ampl_packing_poc` (separate from the HawkN OS database)
@@ -47,7 +47,7 @@ Check: <http://localhost:8010/api/v1/health> shows `"database": "ok"`. Then star
 ## Tests
 
 ```bash
-python manage.py test          # 147 tests, reuses the test database
+python manage.py test          # 148 tests, reuses the test database
 ```
 
 The tests cover every packing rule, the database constraints, real simultaneous requests (double completion, the same product in two boxes) and every API endpoint.
@@ -104,7 +104,7 @@ config/          settings (all from environment), urls, wsgi/asgi, .env loader
 apps/common/     response envelope, error handler, pagination, health check, IdCounter
 apps/accounts/   user model (ADMIN / OPERATOR), login, users admin API, create_ampl_user command
 apps/catalog/    SKUs, UID batches, product UIDs, UID generation, CSV export
-apps/packing/    box configurations (versioned), sections, boxes, scanning rules, verification, scan log
+apps/packing/    box configurations (versioned), sections, boxes, scanning rules, box/item lookup, scan log
 apps/labels/     QR codes (SVG) and label data for printing
 apps/reports/    dashboard counters, packing history, scan log API
 tests/           automated tests, one file per milestone
@@ -118,7 +118,8 @@ docs/            test record, deployment guide, production settings template
 - Each scan is checked: format, exists, not void, not already in a box, SKU in the configuration, SKU count not full.
 - A box completes only when every SKU count matches exactly. Completion is atomic and safe to repeat; box IDs are gapless.
 - Configurations are versioned: a version used by a box never changes.
-- Every scan, rejection, completion, cancellation, lookup and verification is logged.
+- Every scan, rejection, completion and cancellation is logged.
+- The UID CSV has one UID per line and nothing else (no header).
 
 ## API
 
@@ -135,7 +136,7 @@ Not logged in → 401 `NOT_AUTHENTICATED`. Wrong role → 403 `PERMISSION_DENIED
 | Configurations | `GET, POST /box-configurations`, `GET, PATCH /box-configurations/{id}`, `POST /box-configurations/{id}/versions` | Admin |
 | Sections | `GET, POST /sections`, `PATCH /sections/{id}`, `POST /sections/{id}/operators`, `DELETE /sections/{id}/operators/{user_id}` | Admin |
 | Packing | `GET /my/sections`, `POST /sections/{id}/boxes`, `GET /boxes/{public_id}`, `POST /boxes/{public_id}/scans`, `DELETE /boxes/{public_id}/items/{uid}`, `POST /boxes/{public_id}/complete`, `POST /boxes/{public_id}/cancel` | Operator of the section, or admin |
-| Verification | `GET /boxes/lookup?code=`, `POST /boxes/{public_id}/verifications` | Any operator or admin |
+| Scan box / item | `GET /lookup?code=` (product UID or box ID) | Any operator or admin |
 | Labels | `GET /product-uids/{uid}/qr.svg`, `GET /uid-batches/{id}/labels`, `GET /boxes/{box_uid}/qr.svg`, `GET /boxes/{public_id}/label` | Admin / operator of the section |
 | Reports | `GET /dashboard/summary`, `GET /boxes` (history), `GET /scan-logs` | Admin |
 
@@ -144,8 +145,8 @@ With `DJANGO_DEBUG=true`, the API URLs also open as clickable pages in the brows
 ## Known limitations
 
 - **6-digit UIDs are not anti-counterfeit.** Anyone can print a QR with a valid-looking number. They are for tracking, not security.
-- **Capacity is 900,000 product UIDs** for the life of the system. The dashboard shows what is left.
-- **Verification checks the record, not the box.** Scanning a box label shows what the system recorded at packing. Only "Physical inspection" means someone opened and counted the box.
+- **Capacity is 900,000 product UIDs** for the life of the system.
+- **Box details show the system record.** Scanning a box label shows what was scanned into it at packing, not a physical count.
 - **Sticker sheet presets are starting values.** Print one test page and adjust the layout for your exact sheet.
 - **Printing uses the browser's print dialog.** There is no silent or automatic printing.
 - **One open box per section.** Several operators cannot pack separate boxes in the same section at the same time.
