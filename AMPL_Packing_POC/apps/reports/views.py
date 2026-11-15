@@ -16,8 +16,10 @@ from apps.catalog.models import ProductUid
 from apps.catalog.services.uid_generation import capacity_info
 from apps.common.exceptions import AppError
 from apps.common.responses import success_response
-from apps.packing.models import Box, BoxVerification, ConfigurationItem, ScanLog
+from apps.packing.models import Box, ConfigurationItem, ScanLog
 
+# VERIFIED is only on boxes from before verification was removed; it counts as completed.
+DONE_STATUSES = [Box.Status.COMPLETED, Box.Status.VERIFIED]
 TRUE_WORDS = {"1", "true", "yes"}
 FALSE_WORDS = {"0", "false", "no"}
 
@@ -36,12 +38,6 @@ def _parse_date(params, name):
 
 def _name(user):
     return (user.get_full_name() or user.username) if user else None
-
-
-def latest_verification_result():
-    return Subquery(
-        BoxVerification.objects.filter(box=OuterRef("pk")).order_by("-verified_at", "-id").values("result")[:1]
-    )
 
 
 def expected_quantity():
@@ -71,24 +67,13 @@ class DashboardSummaryView(APIView):
             packed=Count("id", filter=Q(status=ProductUid.Status.PACKED)),
             void=Count("id", filter=Q(status=ProductUid.Status.VOID)),
         )
-        done = [Box.Status.COMPLETED, Box.Status.VERIFIED]
-        status_counts = Box.objects.aggregate(
+        box_counts = Box.objects.aggregate(
             open=Count("id", filter=Q(status=Box.Status.OPEN)),
-            completed=Count("id", filter=Q(status__in=done)),
-            verified=Count("id", filter=Q(status=Box.Status.VERIFIED)),
+            completed=Count("id", filter=Q(status__in=DONE_STATUSES)),
             cancelled=Count("id", filter=Q(status=Box.Status.CANCELLED)),
         )
-        finished = Box.objects.filter(status__in=done).annotate(latest_result=latest_verification_result())
-        box_counts = {
-            "open": status_counts["open"],
-            "completed": status_counts["completed"],
-            "verified": status_counts["verified"],
-            "mismatch": finished.filter(latest_result=BoxVerification.Result.MISMATCH).count(),
-            "not_verified": finished.filter(latest_result__isnull=True).count(),
-            "cancelled": status_counts["cancelled"],
-        }
         today = timezone.localdate()
-        completed_today = Box.objects.filter(status__in=done, completed_at__date=today)
+        completed_today = Box.objects.filter(status__in=DONE_STATUSES, completed_at__date=today)
         return success_response({
             "product_uids": uid_counts,
             "boxes": box_counts,
@@ -109,7 +94,7 @@ class DashboardSummaryView(APIView):
 class PackingHistoryView(ListAPIView):
     """
     GET /boxes?status=&section=&operator=&date_from=&date_to=&q=
-    status: OPEN, COMPLETED, VERIFIED, CANCELLED or MISMATCH.
+    status: OPEN, COMPLETED or CANCELLED.
     Dates filter on packing time (completed, else cancelled, else opened).
     """
 
@@ -125,14 +110,12 @@ class PackingHistoryView(ListAPIView):
                 activity_at=Coalesce("completed_at", "cancelled_at", "opened_at"),
                 quantity=Count("items", distinct=True),
                 expected=expected_quantity(),
-                latest_result=latest_verification_result(),
             )
             .order_by("-activity_at", "-id")
         )
         status_value = params.get("status", "").strip().upper()
-        if status_value == "MISMATCH":
-            qs = qs.filter(latest_result=BoxVerification.Result.MISMATCH,
-                           status__in=[Box.Status.COMPLETED, Box.Status.VERIFIED])
+        if status_value == Box.Status.COMPLETED:
+            qs = qs.filter(status__in=DONE_STATUSES)
         elif status_value in Box.Status.values:
             qs = qs.filter(status=status_value)
         section = params.get("section", "").strip()
@@ -158,15 +141,10 @@ class PackingHistoryView(ListAPIView):
 
     @staticmethod
     def row(box):
-        if box.status in (Box.Status.COMPLETED, Box.Status.VERIFIED):
-            verification = {None: "NOT_VERIFIED", "MATCH": "VERIFIED", "MISMATCH": "MISMATCH"}[box.latest_result]
-        else:
-            verification = None
         return {
             "public_id": str(box.public_id),
             "box_uid": box.box_uid,
-            "status": box.status,
-            "verification_status": verification,
+            "status": Box.Status.COMPLETED if box.status in DONE_STATUSES else box.status,
             "configuration": str(box.config_version),
             "section_id": box.section_id,
             "section_code": box.section.code,
