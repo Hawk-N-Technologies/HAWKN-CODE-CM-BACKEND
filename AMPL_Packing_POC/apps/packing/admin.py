@@ -7,7 +7,6 @@ from .models import (
     BoxConfiguration,
     BoxConfigurationVersion,
     BoxItem,
-    BoxVerification,
     ConfigurationItem,
     PackingSection,
     ScanLog,
@@ -117,12 +116,6 @@ class BoxAdmin(ReadOnlyAdmin):
     list_filter = ("status", "section")
     search_fields = ("box_uid",)
     inlines = [BoxItemInline]
-
-
-@admin.register(BoxVerification)
-class BoxVerificationAdmin(ReadOnlyAdmin):
-    list_display = ("box", "method", "result", "verified_by", "verified_at")
-    list_filter = ("method", "result")
 
 
 @admin.register(ScanLog)

@@ -135,6 +135,7 @@ class UidBatchDetailView(APIView):
 def uid_batch_export_csv(request, pk):
     """
     GET /uid-batches/{id}/export.csv
+    One UID per line, nothing else (no header), as the label hardware expects.
     Plain Django view (not DRF) so browsers can download it directly.
     """
     user = request.user
@@ -153,16 +154,9 @@ def uid_batch_export_csv(request, pk):
     response["Content-Disposition"] = (
         f'attachment; filename="uids_{batch.sku.code}_batch{batch.pk}_{stamp}.csv"'
     )
-    response.write("﻿")  # lets Excel detect UTF-8
-    writer = csv.writer(response)
-    writer.writerow(["uid", "sku_code", "sku_name", "status", "batch_id", "created_at"])
-    for uid, status_value, created in batch.product_uids.order_by("id").values_list(
-        "uid", "status", "created_at"
-    ):
-        writer.writerow([
-            uid, batch.sku.code, batch.sku.name, status_value, batch.pk,
-            timezone.localtime(created).strftime("%Y-%m-%d %H:%M:%S"),
-        ])
+    writer = csv.writer(response, lineterminator="\n")
+    for uid in batch.product_uids.order_by("id").values_list("uid", flat=True):
+        writer.writerow([uid])
     return response
 
 
