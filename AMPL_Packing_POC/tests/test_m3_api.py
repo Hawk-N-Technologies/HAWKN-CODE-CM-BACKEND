@@ -157,9 +157,10 @@ class SkuApiTests(ApiFixture):
         self.assertEqual(body["code"], "VALIDATION_ERROR")
         self.assertEqual(body["errors"][0]["field"], "code")
 
-    def test_invalid_code_format(self):
-        response = self.as_admin().post("/api/v1/skus", {"code": "SKU 01!", "name": "Bad"}, format="json")
-        self.assertEqual(response.status_code, 400)
+    def test_any_characters_allowed_in_code(self):
+        response = self.as_admin().post("/api/v1/skus", {"code": "SKU 01!", "name": "Free name"}, format="json")
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["data"]["code"], "SKU 01!")
 
     def test_code_cannot_change_but_name_can(self):
         client = self.as_admin()

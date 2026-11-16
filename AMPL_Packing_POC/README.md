@@ -47,7 +47,7 @@ Check: <http://localhost:8010/api/v1/health> shows `"database": "ok"`. Then star
 ## Tests
 
 ```bash
-python manage.py test          # 154 tests, reuses the test database
+python manage.py test          # 159 tests, reuses the test database
 ```
 
 The tests cover every packing rule, the database constraints, real simultaneous requests (double completion, the same product in two boxes) and every API endpoint.
@@ -120,6 +120,7 @@ docs/            test record, deployment guide, production settings template
 - Configurations are versioned: a version used by a box never changes.
 - Every scan, rejection, completion and cancellation is logged.
 - The UID CSV has one UID per line and nothing else (no header).
+- SKU, box configuration and section codes: any characters allowed (no naming rule); required, up to 32 characters, unique.
 
 ## API
 

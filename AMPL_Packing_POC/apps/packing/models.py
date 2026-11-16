@@ -3,7 +3,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 
-from apps.catalog.models import CODE_REGEX, ProductUid, Sku, normalize_code
+from apps.catalog.models import ProductUid, Sku, normalize_code
 
 BOX_UID_REGEX = r"^BOX-[0-9]{6,}$"
 USER = settings.AUTH_USER_MODEL
@@ -25,12 +25,6 @@ class BoxConfiguration(models.Model):
     class Meta:
         db_table = "ampl_box_configuration"
         ordering = ["code"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(code__regex=CODE_REGEX),
-                name="ampl_box_configuration_code_format",
-            ),
-        ]
 
     def clean(self):
         # Runs before Django checks constraints (admin and API forms), so
@@ -131,12 +125,6 @@ class PackingSection(models.Model):
     class Meta:
         db_table = "ampl_packing_section"
         ordering = ["code"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(code__regex=CODE_REGEX),
-                name="ampl_packing_section_code_format",
-            ),
-        ]
 
     def clean(self):
         # Runs before Django checks constraints (admin and API forms), so
