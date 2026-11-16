@@ -1,9 +1,7 @@
-import re
-
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 
-from .models import CODE_REGEX, ProductUid, Sku, UidBatch, normalize_code
+from .models import ProductUid, Sku, UidBatch, normalize_code
 
 
 class SkuSerializer(serializers.ModelSerializer):
@@ -22,10 +20,6 @@ class SkuSerializer(serializers.ModelSerializer):
         code = normalize_code(value)
         if self.instance is not None and code != self.instance.code:
             raise serializers.ValidationError("SKU code cannot be changed once created.")
-        if not re.fullmatch(CODE_REGEX, code):
-            raise serializers.ValidationError(
-                "Use letters, digits, '-' or '_' only, starting with a letter or digit."
-            )
         duplicate = Sku.objects.filter(code=code)
         if self.instance is not None:
             duplicate = duplicate.exclude(pk=self.instance.pk)
