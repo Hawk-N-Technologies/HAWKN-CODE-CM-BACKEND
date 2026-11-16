@@ -14,7 +14,7 @@ Fill in each **Result** with ✅ Pass or ❌ Fail, and add a note for anything u
 | Phone / browser | e.g. Android, Chrome |
 | Product label printer and sticker sheet | |
 | Box label printer (100 × 50 mm labels) | |
-| Automated tests (`python manage.py test`) | 154 tests — OK / failed |
+| Automated tests (`python manage.py test`) | 159 tests — OK / failed |
 
 ## A. Main flow (Phase 5)
 

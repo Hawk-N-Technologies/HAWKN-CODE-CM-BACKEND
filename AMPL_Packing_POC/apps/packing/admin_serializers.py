@@ -1,10 +1,8 @@
 """Input validation and output payloads for the admin screens."""
-import re
-
 from django.db.models import Count
 from rest_framework import serializers
 
-from apps.catalog.models import CODE_REGEX, Sku, normalize_code
+from apps.catalog.models import Sku, normalize_code
 
 from .models import Box, BoxConfiguration, BoxConfigurationVersion, PackingSection
 from .serializers import _user_name, config_payload
@@ -14,8 +12,6 @@ def validate_code_value(value, model, label, instance=None):
     code = normalize_code(value)
     if not code:
         raise serializers.ValidationError("Code is required.")
-    if not re.fullmatch(CODE_REGEX, code):
-        raise serializers.ValidationError("Use letters, digits, '-' or '_' only, starting with a letter or digit.")
     duplicate = model.objects.filter(code=code)
     if instance is not None:
         duplicate = duplicate.exclude(pk=instance.pk)
