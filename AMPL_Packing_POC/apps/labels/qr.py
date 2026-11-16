@@ -13,10 +13,15 @@ from .svg import matrix_to_svg
 QUIET_ZONE = 4
 
 
-def qr_svg(data: str) -> str:
+def qr_matrix(data: str):
+    """Rows of True (dark) / False (light) modules, quiet zone included."""
     code = qrcode.QRCode(
         version=None, error_correction=ERROR_CORRECT_M, box_size=1, border=QUIET_ZONE
     )
     code.add_data(data)
     code.make(fit=True)
-    return matrix_to_svg(code.get_matrix(), title=data)
+    return code.get_matrix()
+
+
+def qr_svg(data: str) -> str:
+    return matrix_to_svg(qr_matrix(data), title=data)
