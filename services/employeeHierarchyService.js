@@ -200,9 +200,8 @@ async function getHierarchyImage(companyId, imageUuid) {
 }
 
 module.exports = {
+  getHierarchyImage,
   getHierarchyImages,
   uploadHierarchyImages,
   deleteHierarchyImage,
-  getHierarchyImage,
 };
-
