@@ -470,8 +470,6 @@ describe("Responses, timezone, security headers", () => {
     assert.equal(stranger.headers.get("access-control-allow-origin"), null);
   });
 });
-
-
 // ---------------------------------------------------------------------------
 // P3 (A) — pages connected to real data
 // ---------------------------------------------------------------------------

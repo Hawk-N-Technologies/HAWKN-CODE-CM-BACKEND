@@ -1323,8 +1323,8 @@ module.exports = {
   getBugsInTester,
   updateBugByTester,
   updateStatusDEV,
-  createIssueReport,
-  getClientIssueReports,
   getRetestQueue,
   recordRetestResult,
+  createIssueReport,
+  getClientIssueReports,
 };

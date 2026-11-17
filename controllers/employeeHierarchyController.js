@@ -58,6 +58,8 @@ async function uploadHierarchyImages(req, res, next) {
     const files = req.files.map(function (file) {
       return {
         originalFileName: file.originalname,
+        // Only the generated file name is stored — never a server disk path.
+        // The image is served by GET /api/company/hierarchy/:imageUuid/file
         fileUrl: file.filename,
         storageKey: file.filename,
         mimeType: file.mimetype,
