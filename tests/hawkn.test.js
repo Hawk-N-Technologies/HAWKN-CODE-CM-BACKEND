@@ -771,3 +771,70 @@ describe("Phone / laptop alerts", () => {
     assert.equal(row.n, 0);
   });
 });
+
+describe("Project Lead dashboard numbers", () => {
+  // Counted straight from the database, for one lead's (non-cancelled) projects
+  const expected = (email) =>
+    one(
+      `SELECT
+         (SELECT count(*)::int FROM project_phases ph
+            WHERE ph.project_id = ANY(ids.list) AND ph.status = 'In Progress') AS "activePhases",
+         (SELECT count(*)::int FROM project_tasks t
+            WHERE t.project_id = ANY(ids.list) AND t.status <> 'Done') AS "openTasks",
+         (SELECT count(*)::int FROM project_tasks t
+            WHERE t.project_id = ANY(ids.list) AND t.status = 'Done') AS "completedTasks"
+       FROM (
+         SELECT coalesce(array_agg(p.id), '{}') AS list
+         FROM projects p
+         JOIN employees e ON e.id = p.project_lead_id
+         JOIN users u ON u.id = e.user_id
+         WHERE u.email = :email AND p.status <> 'Cancelled'
+       ) ids`,
+      { email },
+    );
+
+  it("shows real active phases, open tasks and completed tasks", async () => {
+    const before = await S.leadA2.request("GET", "/developer/projects/summary");
+    assert.equal(before.status, 200, JSON.stringify(before.body));
+
+    // Give Lead A2's project one active phase, one open and two done tasks
+    const mod = await S.leadA2.request("POST", `/projects/${D.projectA2.uuid}/modules`, { name: "Dash module" });
+    const phase = await S.leadA2.request(
+      "POST",
+      `/projects/${D.projectA2.uuid}/modules/${mod.body.data.uuid}/phases`,
+      { name: "Dash phase" },
+    );
+    await run(`UPDATE project_phases SET status = 'In Progress' WHERE uuid = :uuid`, { uuid: phase.body.data.uuid });
+
+    for (const [title, status] of [["Dash open", "To Do"], ["Dash done 1", "Done"], ["Dash done 2", "Done"]]) {
+      const task = await S.leadA2.request("POST", `/projects/${D.projectA2.uuid}/tasks`, { title });
+      assert.equal(task.status, 201, JSON.stringify(task.body));
+      await run(`UPDATE project_tasks SET status = :status WHERE uuid = :uuid`, { status, uuid: task.body.data.uuid });
+    }
+
+    const after = await S.leadA2.request("GET", "/developer/projects/summary");
+    assert.deepEqual(after.body.data, await expected("lead.a2@test.com"));
+    assert.equal(after.body.data.activePhases, before.body.data.activePhases + 1);
+    assert.equal(after.body.data.openTasks, before.body.data.openTasks + 1);
+    assert.equal(after.body.data.completedTasks, before.body.data.completedTasks + 2);
+  });
+
+  it("each lead only counts their own projects; other roles can't call it", async () => {
+    const leadA = await S.leadA.request("GET", "/developer/projects/summary");
+    assert.deepEqual(leadA.body.data, await expected("lead.a@test.com"));
+
+    const leadB = await S.leadB.request("GET", "/developer/projects/summary");
+    assert.deepEqual(leadB.body.data, await expected("lead.b@test.com"));
+
+    assert.equal((await S.testerA.request("GET", "/developer/projects/summary")).status, 403);
+    assert.equal((await S.adminA.request("GET", "/developer/projects/summary")).status, 403);
+  });
+
+  it("a cancelled project stops counting", async () => {
+    const { status } = await one(`SELECT status FROM projects WHERE uuid = :uuid`, { uuid: D.projectA2.uuid });
+    await run(`UPDATE projects SET status = 'Cancelled' WHERE uuid = :uuid`, { uuid: D.projectA2.uuid });
+    const res = await S.leadA2.request("GET", "/developer/projects/summary");
+    assert.deepEqual(res.body.data, { activePhases: 0, openTasks: 0, completedTasks: 0 });
+    await run(`UPDATE projects SET status = :status WHERE uuid = :uuid`, { status, uuid: D.projectA2.uuid });
+  });
+});

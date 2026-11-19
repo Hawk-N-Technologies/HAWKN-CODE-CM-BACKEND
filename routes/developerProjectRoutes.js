@@ -12,5 +12,6 @@ const router = express.Router();
 router.use(authenticate(["developer"]));
 
 router.get("/", developerProjectController.listMyProjects);
+router.get("/summary", developerProjectController.getMySummary);
 
 module.exports = router;
