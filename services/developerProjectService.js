@@ -1,4 +1,5 @@
-const { Project, Client, Employee, User } = require("../models/associations");
+const { Op } = require("@sequelize/core");
+const { Project, Client, Employee, User, ProjectPhase, ProjectTask } = require("../models/associations");
 const logger = require("../utils/logger");
 
 /**
@@ -99,6 +100,57 @@ async function listMyProjects(userId, companyId) {
   }
 }
 
+/**
+ * Project Lead dashboard numbers, across every project this user leads
+ * (Cancelled projects don't count):
+ *   activePhases   → phases "In Progress"
+ *   openTasks      → tasks not "Done"
+ *   completedTasks → tasks "Done"
+ */
+async function getMySummary(userId, companyId) {
+  try {
+    const projects = await Project.findAll({
+      where: { companyId, status: { [Op.ne]: "Cancelled" } },
+      attributes: ["id"],
+      include: [
+        {
+          model: Employee,
+          as: "projectLead",
+          required: true,
+          attributes: [],
+          where: { userId, companyId },
+        },
+      ],
+      raw: true,
+    });
+
+    const projectIds = projects.map((project) => project.id);
+
+    if (projectIds.length === 0) {
+      return { activePhases: 0, openTasks: 0, completedTasks: 0 };
+    }
+
+    const inProjects = { projectId: { [Op.in]: projectIds } };
+
+    const [activePhases, openTasks, completedTasks] = await Promise.all([
+      ProjectPhase.count({ where: { ...inProjects, status: "In Progress" } }),
+      ProjectTask.count({ where: { ...inProjects, status: { [Op.ne]: "Done" } } }),
+      ProjectTask.count({ where: { ...inProjects, status: "Done" } }),
+    ]);
+
+    return { activePhases, openTasks, completedTasks };
+  } catch (error) {
+    logger.error("Failed to fetch project lead summary", {
+      companyId,
+      userId,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   listMyProjects,
+  getMySummary,
 };
