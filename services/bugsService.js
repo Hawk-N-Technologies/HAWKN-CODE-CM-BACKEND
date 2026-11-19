@@ -25,6 +25,7 @@ const {
   isLeadOfProject,
   isClientOfProject,
 } = require("../middleware/projectAccess");
+const events = require("./eventNotifications");
 // Safety cap for lists that keep growing (until they get real pagination)
 const MAX_LIST_ROWS = 1000;
 
@@ -317,7 +318,7 @@ async function createBug(user, data) {
   }
 
   if (user.role === "tester") {
-    return ProjectBug.create({
+    const reported = await ProjectBug.create({
       projectId: project.id,
       moduleId: module?.id ?? null,
       title: title.trim(),
@@ -327,12 +328,23 @@ async function createBug(user, data) {
       status: "Open",
       assignedTo: null,
     });
+
+    // Tester's bug goes to the project lead
+    await events.bugToLead({
+      companyId: user.companyId,
+      projectId: project.id,
+      bug: reported,
+      reason: "reported",
+      byUserId: user.userId,
+    });
+
+    return reported;
   }
 
   // Project lead
   const assigneeId = await getTeamAssignee(assignedTo, project, user.companyId);
 
-  return ProjectBug.create({
+  const created = await ProjectBug.create({
     projectId: project.id,
     moduleId: module?.id ?? null,
     title: title.trim(),
@@ -342,6 +354,18 @@ async function createBug(user, data) {
     status: assigneeId ? "Assigned" : "Open",
     assignedTo: assigneeId,
   });
+
+  if (assigneeId) {
+    await events.bugAssigned({
+      companyId: user.companyId,
+      projectId: project.id,
+      bug: created,
+      developerEmployeeId: assigneeId,
+      byUserId: user.userId,
+    });
+  }
+
+  return created;
 }
 
 async function getProjectBugs(projectId, filters = {}, companyId) {
@@ -527,9 +551,32 @@ async function updateBug(bugId, projectId, data, companyId) {
       );
     }
 
+    const previousAssignee = bug.assignedTo;
+    const previousStatus = bug.status;
+
     await bug.update(updates, { transaction });
 
     await transaction.commit();
+
+    // After the save is committed: tell who needs to act next
+    if (
+      updates.assignedTo &&
+      Number(updates.assignedTo) !== Number(previousAssignee)
+    ) {
+      await events.bugAssigned({
+        companyId,
+        projectId: project.id,
+        bug,
+        developerEmployeeId: updates.assignedTo,
+      });
+    }
+
+    if (
+      nextStatus === "Ready for Retest" &&
+      previousStatus !== "Ready for Retest"
+    ) {
+      await events.retestRequested({ companyId, projectId: project.id, bug });
+    }
 
     return bug;
   } catch (error) {
@@ -838,7 +885,7 @@ async function createBugByTester(data, user) {
 
   validateTesterBug({ title, status: "Open", severity, discoverySource });
 
-  return ProjectBug.create({
+  const created = await ProjectBug.create({
     projectId: project.id,
     moduleId: module?.id ?? null,
     severity,
@@ -848,6 +895,17 @@ async function createBugByTester(data, user) {
     discoverySource,
     assignedTo: null,
   });
+
+  // Tester's bug goes to the project lead
+  await events.bugToLead({
+    companyId: user.companyId,
+    projectId: project.id,
+    bug: created,
+    reason: "reported",
+    byUserId: user.userId,
+  });
+
+  return created;
 }
 
 // Bugs of every project the tester is assigned to
@@ -914,7 +972,9 @@ async function updateBugByTester(uuid, data, user) {
     testNotes,
   } = data;
 
-  return sequelize.transaction(async (transaction) => {
+  let reopenedIn = null; // projectId, set when the tester reopens the bug
+
+  const saved = await sequelize.transaction(async (transaction) => {
     const bug = await ProjectBug.findOne({
       where: {
         uuid,
@@ -988,6 +1048,7 @@ async function updateBugByTester(uuid, data, user) {
     // Fix failed → back to the project lead to reassign
     if (nextStatus === "Reopened") {
       updates.assignedTo = null;
+      if (bug.status !== "Reopened") reopenedIn = project.id;
     }
 
     // Record the retest result on the open retest attempt
@@ -1014,6 +1075,19 @@ async function updateBugByTester(uuid, data, user) {
 
     return bug;
   });
+
+  // Fix failed → back to the project lead
+  if (reopenedIn) {
+    await events.bugToLead({
+      companyId: user.companyId,
+      projectId: reopenedIn,
+      bug: saved,
+      reason: "reopened",
+      byUserId: user.userId,
+    });
+  }
+
+  return saved;
 }
 
 // ---------------------------------------------------------------------------
@@ -1113,7 +1187,9 @@ async function recordRetestResult(uuid, data, user) {
     throw new BugServiceError("Add a note explaining why the retest failed.", 400);
   }
 
-  return sequelize.transaction(async (transaction) => {
+  let failedIn = null; // projectId, set when the retest fails
+
+  const saved = await sequelize.transaction(async (transaction) => {
     const bug = await ProjectBug.findOne({
       where: { uuid },
       transaction,
@@ -1170,13 +1246,29 @@ async function recordRetestResult(uuid, data, user) {
       { transaction },
     );
 
+    if (result === "Failed") failedIn = project.id;
+
     return {
       uuid: bug.uuid,
       bugStatus: bug.status,
       result,
       attemptNumber: attempt.attemptNumber,
+      title: bug.title,
     };
   });
+
+  // Retest failed → back to the project lead
+  if (failedIn) {
+    await events.bugToLead({
+      companyId: user.companyId,
+      projectId: failedIn,
+      bug: saved,
+      reason: "reopened",
+      byUserId: user.userId,
+    });
+  }
+
+  return saved;
 }
 
 const createServiceError = (message, statusCode = 400) => {
