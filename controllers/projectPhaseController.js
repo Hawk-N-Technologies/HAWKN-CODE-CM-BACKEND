@@ -1,4 +1,5 @@
 const projectPhaseService = require("../services/projectPhaseService");
+const events = require("../services/eventNotifications");
 const logger = require("../utils/logger");
 
 const UUID_REGEX =
@@ -257,6 +258,20 @@ const updatePhase = async (req, res) => {
     }
 
     const updatedPhase = await projectPhaseService.updatePhase(uuid, updates);
+
+    // Phase just marked Completed → tell Admin
+    if (
+      updatedPhase &&
+      updatedPhase.status === "Completed" &&
+      phase.status !== "Completed"
+    ) {
+      await events.phaseCompleted({
+        companyId: req.user.companyId,
+        projectId: updatedPhase.projectId,
+        phase: updatedPhase,
+        byUserId: req.user.userId,
+      });
+    }
 
     return res.status(200).json({
       message: "Phase updated successfully.",

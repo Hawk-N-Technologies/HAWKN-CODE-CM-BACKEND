@@ -9,6 +9,7 @@ const sequelize = require("../config/db");
 const logger = require("../utils/logger");
 const { Op, Transaction } = require("@sequelize/core");
 const notificationService = require("./notificationService");
+const events = require("./eventNotifications");
 
 // A BRD can be referenced by its UUID or its numeric id (both supported so
 // existing pages keep working). Admin access to every BRD is intentional.
@@ -650,8 +651,13 @@ const decideBRD = async ({ brdId, reviewerId, action, message }) => {
   try {
     const brd = await BRD.findOne({
       where: brdWhere(brdId),
-      attributes: ["id", "uuid", "title", "createdBy", "companyId"],
+      attributes: ["id", "uuid", "title", "createdBy", "companyId", "clientId"],
     });
+
+    // Admin approved → the client now has to approve it
+    if (brd && result.status === "PENDING_CLIENT_APPROVAL") {
+      await events.brdNeedsClientApproval({ companyId: brd.companyId, brd });
+    }
 
     if (brd?.createdBy) {
       const approved = action === "APPROVED";

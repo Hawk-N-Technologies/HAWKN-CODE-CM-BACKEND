@@ -1,4 +1,5 @@
 const { UniqueConstraintError } = require("@sequelize/core");
+const bcrypt = require("bcrypt");
 const sequelize = require("../config/db");
 const {
   User,
@@ -161,6 +162,10 @@ function validateStartInput(body = {}) {
   const employmentType = trimOrNull(body.employmentType) ?? "Full Time";
   const joiningDate = trimOrNull(body.joiningDate);
   const phone1 = trimOrNull(body.phone1);
+  // HR sets the employee's final password here (no self-service change)
+  const password = typeof body.password === "string" ? body.password : "";
+  const confirmPassword =
+    typeof body.confirmPassword === "string" ? body.confirmPassword : "";
 
   if (!firstName) errors.firstName = "First name is required";
   else if (firstName.length > 100) errors.firstName = "Max 100 characters";
@@ -182,11 +187,28 @@ function validateStartInput(body = {}) {
 
   if (phone1 && !PHONE_REGEX.test(phone1)) errors.phone1 = "Enter a valid phone number";
 
+  if (!password) errors.password = "Password is required";
+  else if (password.length < 8) errors.password = "Password must be at least 8 characters";
+  else if (password.length > 72) errors.password = "Password must be at most 72 characters";
+
+  if (!confirmPassword) errors.confirmPassword = "Confirm the password";
+  else if (password && confirmPassword !== password)
+    errors.confirmPassword = "Passwords do not match";
+
   if (Object.keys(errors).length) {
     throw httpError(400, "Please fix the highlighted fields", errors);
   }
 
-  return { firstName, lastName, email, roleUuid, employmentType, joiningDate, phone1 };
+  return {
+    firstName,
+    lastName,
+    email,
+    roleUuid,
+    employmentType,
+    joiningDate,
+    phone1,
+    password,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -229,11 +251,12 @@ async function listOnboarding(companyId) {
 /**
  * "Start Onboarding": creates the login user, the employee record and the
  * onboarding checklist in ONE transaction — all three exist, or none do.
- * No password is set: the new joiner can't log in until one is set
- * (invite / set-password flow comes with auth).
+ * HR sets the employee's final password here, so they can log in right away.
+ * Only HR/Admin can change it later (Employees → edit).
  */
 async function startOnboarding(companyId, body) {
   const input = validateStartInput(body);
+  const passwordHash = await bcrypt.hash(input.password, 12);
 
   try {
     // Managed transaction (Sequelize v7): commits if the callback finishes,
@@ -268,7 +291,7 @@ async function startOnboarding(companyId, body) {
           firstName: input.firstName,
           lastName: input.lastName,
           email: input.email,
-          passwordHash: null,
+          passwordHash,
         },
         { transaction },
       );

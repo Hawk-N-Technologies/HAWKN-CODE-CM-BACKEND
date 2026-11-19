@@ -1,5 +1,6 @@
 const { Server } = require("socket.io");
 const jwtService = require("../services/jwtService");
+const { isSessionValid } = require("../services/sessionService");
 
 let io;
 
@@ -33,7 +34,7 @@ function initializeNotificationSocket(httpServer) {
     },
   });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = readCookie(
       socket.handshake.headers.cookie,
       "access_token",
@@ -47,6 +48,14 @@ function initializeNotificationSocket(httpServer) {
 
     if (!user?.userId || !user?.companyId || !user?.role) {
       return next(new Error("Invalid authentication"));
+    }
+
+    try {
+      if (!(await isSessionValid(user))) {
+        return next(new Error("Session ended"));
+      }
+    } catch {
+      return next(new Error("Authentication failed"));
     }
 
     socket.data.user = {

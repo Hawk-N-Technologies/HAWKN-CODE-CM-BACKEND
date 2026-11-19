@@ -17,6 +17,14 @@ const bcrypt = require("bcrypt");
 const helpers = require("./helpers");
 
 process.env.DATABASE_URL = helpers.testDatabaseUrl();
+
+// Throwaway phone/laptop alert keys for the test server
+if (!process.env.VAPID_PUBLIC_KEY) {
+  const vapid = require("web-push").generateVAPIDKeys();
+  process.env.VAPID_PUBLIC_KEY = vapid.publicKey;
+  process.env.VAPID_PRIVATE_KEY = vapid.privateKey;
+  process.env.VAPID_SUBJECT = "mailto:test@example.com";
+}
 const sequelize = require("../config/db");
 
 const PASSWORD = "Test@1234";
@@ -586,5 +594,180 @@ describe("Employee hierarchy (admin uploads, HR views)", () => {
     });
     assert.equal(otherCompany.status, 404);
     assert.equal((await S.leadA.request("GET", "/company/hierarchy")).status, 403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GO 1 · Part 1 — passwords, notifications, phone/laptop alerts
+// ---------------------------------------------------------------------------
+
+describe("Passwords: HR sets them, a reset ends old logins", () => {
+  it("onboarding needs a password, and the new employee can log in with it", async () => {
+    S.hr = S.hrA || (await helpers.Session.login("hr@gmail.com", "Hr@12345"));
+    const roles = (await S.hr.request("GET", "/onboarding/roles")).body.data;
+    const developerRole = roles.find((role) => role.name === "developer");
+
+    const base = {
+      firstName: "New", lastName: "Joiner", email: "new.joiner@test.com",
+      roleUuid: developerRole.uuid, joiningDate: "2026-11-01",
+    };
+
+    const missing = await S.hr.request("POST", "/onboarding", base);
+    assert.equal(missing.status, 400);
+    assert.ok(missing.body.errors?.password || /password/i.test(JSON.stringify(missing.body)));
+
+    const mismatch = await S.hr.request("POST", "/onboarding", { ...base, password: "Joiner@123", confirmPassword: "Other@123" });
+    assert.equal(mismatch.status, 400);
+
+    const created = await S.hr.request("POST", "/onboarding", { ...base, password: "Joiner@123", confirmPassword: "Joiner@123" });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+
+    S.joiner = await helpers.Session.login("new.joiner@test.com", "Joiner@123");
+    assert.equal((await S.joiner.request("GET", "/notifications")).status, 200);
+  });
+
+  it("employees can't change passwords (only HR/Admin can)", async () => {
+    const joiner = await one(`SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = 'new.joiner@test.com'`);
+    const self = await S.joiner.request("PUT", `/employees/${joiner.id}`, { password: "Hacked@123", confirmPassword: "Hacked@123" });
+    assert.equal(self.status, 403);
+  });
+
+  it("an HR password reset logs the person out everywhere; the new password works", async () => {
+    const joiner = await one(`SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = 'new.joiner@test.com'`);
+
+    // logins issued in the same second as a reset count as old: wait a tick
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    const reset = await S.hr.request("PUT", `/employees/${joiner.id}`, { password: "Reset@1234", confirmPassword: "Reset@1234" });
+    assert.equal(reset.status, 200, JSON.stringify(reset.body));
+
+    const old = await S.joiner.request("GET", "/notifications");
+    assert.equal(old.status, 401);
+    assert.match(old.body.message, /session has ended/i);
+
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const fresh = await helpers.Session.login("new.joiner@test.com", "Reset@1234");
+    assert.equal((await fresh.request("GET", "/notifications")).status, 200);
+    S.joiner = fresh;
+  });
+
+  it("HR's own login is not affected by resetting someone else", async () => {
+    assert.equal((await S.hr.request("GET", "/onboarding/roles")).status, 200);
+  });
+
+  it("a deactivated user's login stops working immediately", async () => {
+    await run(`UPDATE users SET is_active = false WHERE email = 'new.joiner@test.com'`);
+    assert.equal((await S.joiner.request("GET", "/notifications")).status, 401);
+    await run(`UPDATE users SET is_active = true WHERE email = 'new.joiner@test.com'`);
+
+    // the refused request cleared the login cookie (as a browser would): log in again
+    S.joiner = await helpers.Session.login("new.joiner@test.com", "Reset@1234");
+  });
+});
+
+describe("Notifications reach every role, for the agreed events", () => {
+  const latest = async (email, type) =>
+    one(
+      `SELECT n.type, n.title, n.message, n.link FROM notifications n
+       JOIN users u ON u.id = n.recipient_user_id
+       WHERE u.email = :email AND n.type = :type ORDER BY n.id DESC LIMIT 1`,
+      { email, type },
+    );
+
+  it("testers and clients can open their notifications", async () => {
+    assert.equal((await S.testerA.request("GET", "/notifications")).status, 200);
+    assert.equal((await S.clientA.request("GET", "/notifications")).status, 200);
+  });
+
+  it("lead was told when made lead of a new project", async () => {
+    const note = await latest("lead.a@test.com", "PROJECT_ASSIGNED");
+    assert.ok(note, "lead got PROJECT_ASSIGNED");
+    assert.equal(note.link, "/project-lead/projects");
+  });
+
+  it("tester's bug → lead; lead assigns → developer; retest → tester; failed → lead", async () => {
+    const reported = await S.testerA.request("POST", "/bugs/createByTester", {
+      projectId: D.projectA.uuid, title: "Alert flow bug", severity: "High",
+    });
+    assert.equal(reported.status, 201);
+    const bug = reported.body.data.uuid;
+    assert.ok(await latest("lead.a@test.com", "BUG_REPORTED"));
+
+    await S.leadA.request("PATCH", `/bugs/projects/${D.projectA.uuid}/bugs/${bug}`, { assignedTo: D.teamDevId });
+    const assigned = await latest("team.dev@test.com", "BUG_ASSIGNED");
+    assert.ok(assigned && assigned.message.includes("Alert flow bug"));
+
+    await S.teamDev.request("PUT", `/bugs/developer/${bug}/status`, { status: "Fixed" });
+    await S.leadA.request("PATCH", `/bugs/projects/${D.projectA.uuid}/bugs/${bug}`, { status: "Ready for Retest" });
+    const retest = await latest("tester.a@test.com", "RETEST_REQUESTED");
+    assert.ok(retest && retest.message.includes("Alert flow bug"));
+    assert.equal(await latest("tester.a2@test.com", "RETEST_REQUESTED"), undefined, "other project's tester not told");
+
+    await S.testerA.request("PATCH", `/bugs/tester/retests/${bug}`, { result: "Failed", testNotes: "Still broken" });
+    const back = await latest("lead.a@test.com", "BUG_REOPENED");
+    assert.ok(back && back.message.includes("Alert flow bug"));
+  });
+
+  it("only newly added team members are told", async () => {
+    const before = await one(`SELECT count(*)::int AS n FROM notifications n JOIN users u ON u.id = n.recipient_user_id WHERE u.email = 'team.dev@test.com' AND n.type = 'TEAM_ADDED'`);
+    const testerId = await employeeId("tester.a@test.com");
+    const joinerId = await employeeId("new.joiner@test.com");
+    const leadId = await employeeId("lead.a@test.com");
+
+    const saved = await S.leadA.request("PUT", `/project-lead/team/projects/${D.projectA.uuid}`, {
+      projectLeadId: leadId, developerIds: [D.teamDevId, joinerId], testerIds: [testerId],
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+
+    assert.ok(await latest("new.joiner@test.com", "TEAM_ADDED"), "new member told");
+    const after = await one(`SELECT count(*)::int AS n FROM notifications n JOIN users u ON u.id = n.recipient_user_id WHERE u.email = 'team.dev@test.com' AND n.type = 'TEAM_ADDED'`);
+    assert.equal(after.n, before.n, "existing member not told again");
+  });
+
+  it("client is told when a BRD needs their approval", async () => {
+    const note = await latest("client.b@test.com", "BRD_APPROVAL_NEEDED");
+    assert.ok(note, "client B was told after Admin approved BRD of B Project");
+    assert.equal(note.link, "/client/brd-approval");
+  });
+
+  it("admin is told when a phase is completed", async () => {
+    const phase = await one(`SELECT uuid FROM project_phases WHERE name = 'Phase 1' LIMIT 1`);
+    const res = await S.leadA.request("PUT", `/phases/${phase.uuid}`, { status: "Completed" });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const note = await latest("admin@gmail.com", "PHASE_COMPLETED");
+    assert.ok(note && note.message.includes("Phase 1"));
+  });
+});
+
+describe("Phone / laptop alerts", () => {
+  const FCM = "https://fcm.googleapis.com/fcm/send/test-device-123";
+  const keys = { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", auth: "tBHItJI5svbpez7KI4CCXg" };
+
+  it("server shares its public key", async () => {
+    const res = await S.leadA.request("GET", "/notifications/push/public-key");
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.enabled, true);
+    assert.ok(res.body.data.publicKey);
+  });
+
+  it("only real browser push services are accepted", async () => {
+    const evil = await S.joiner.request("POST", "/notifications/push/subscribe", {
+      subscription: { endpoint: "https://evil.example.com/collect", keys },
+    });
+    assert.equal(evil.status, 400);
+
+    const ok = await S.joiner.request("POST", "/notifications/push/subscribe", {
+      subscription: { endpoint: FCM, keys },
+    });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    const row = await one(`SELECT count(*)::int AS n FROM push_subscriptions WHERE endpoint = :e`, { e: FCM });
+    assert.equal(row.n, 1);
+  });
+
+  it("a password reset removes that person's devices", async () => {
+    const joiner = await one(`SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = 'new.joiner@test.com'`);
+    await S.hr.request("PUT", `/employees/${joiner.id}`, { password: "Again@1234", confirmPassword: "Again@1234" });
+    const row = await one(`SELECT count(*)::int AS n FROM push_subscriptions WHERE endpoint = :e`, { e: FCM });
+    assert.equal(row.n, 0);
   });
 });

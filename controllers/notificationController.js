@@ -1,4 +1,5 @@
 const notificationService = require("../services/notificationService");
+const pushService = require("../services/pushService");
 
 async function list(req, res, next) {
   try {
@@ -96,9 +97,62 @@ async function createTestNotification(req, res, next) {
   }
 }
 
+// Phone / laptop alerts: the key the browser needs to subscribe
+async function getPushPublicKey(req, res, next) {
+  try {
+    return res.status(200).json({
+      success: true,
+      data: {
+        enabled: pushService.isEnabled(),
+        publicKey: pushService.getPublicKey(),
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function subscribePush(req, res, next) {
+  try {
+    const data = await pushService.subscribe(
+      req.user,
+      req.body?.subscription,
+      req.get("user-agent"),
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Phone/laptop alerts are on for this device.",
+      data,
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    return next(error);
+  }
+}
+
+async function unsubscribePush(req, res, next) {
+  try {
+    const data = await pushService.unsubscribe(req.user, req.body?.endpoint);
+
+    return res.status(200).json({
+      success: true,
+      message: "Phone/laptop alerts are off for this device.",
+      data,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   list,
   markRead,
   markAllRead,
   createTestNotification,
+  getPushPublicKey,
+  subscribePush,
+  unsubscribePush,
 };

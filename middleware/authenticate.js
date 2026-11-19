@@ -1,8 +1,9 @@
 const jwtService = require("../services/jwtService");
+const { isSessionValid } = require("../services/sessionService");
 const logger = require("../utils/logger");
 
 function authenticate(allowedRoles) {
-  return function (req, res, next) {
+  return async function (req, res, next) {
     try {
       const token = req.cookies.access_token;
       if (!token) {
@@ -18,6 +19,19 @@ function authenticate(allowedRoles) {
         return res.status(401).json({
           success: false,
           message: "Invalid or expired token",
+        });
+      }
+
+      // Deactivated user, or password changed by HR/Admin since this login
+      if (!(await isSessionValid(decoded))) {
+        res.clearCookie("access_token", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        });
+        return res.status(401).json({
+          success: false,
+          message: "Your session has ended. Please log in again.",
         });
       }
 

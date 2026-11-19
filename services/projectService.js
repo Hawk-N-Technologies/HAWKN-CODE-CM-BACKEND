@@ -10,6 +10,7 @@ const logger = require("../utils/logger");
 const BRD = require("../models/BRD");
 const BRDVersion = require("../models/BRDVersion");
 const notificationService = require("../services/notificationService");
+const events = require("./eventNotifications");
 // --------------------------------------------------
 // Constants
 // --------------------------------------------------
@@ -985,6 +986,16 @@ async function createProject(companyId, data, userId, file) {
       }
     }
 
+    // Project created with a lead → tell them (after commit)
+    if (project.projectLeadId) {
+      await events.projectLeadAssigned({
+        companyId,
+        projectId: project.id,
+        leadEmployeeId: project.projectLeadId,
+        byUserId: userId,
+      });
+    }
+
     return getProject(project.uuid, companyId);
   } catch (error) {
     if (!transaction.finished) {
@@ -1029,6 +1040,7 @@ async function updateProject(projectUuid, companyId, data, userId, file) {
     }
 
     const values = await prepareProjectData(companyId, data, project);
+    const previousLeadId = project.projectLeadId;
     await project.update(values, { transaction });
 
     let brd = null;
@@ -1128,6 +1140,19 @@ async function updateProject(projectUuid, companyId, data, userId, file) {
           error: notificationError.message,
         });
       }
+    }
+
+    // New lead on this project → tell them (after commit)
+    if (
+      project.projectLeadId &&
+      Number(project.projectLeadId) !== Number(previousLeadId)
+    ) {
+      await events.projectLeadAssigned({
+        companyId,
+        projectId: project.id,
+        leadEmployeeId: project.projectLeadId,
+        byUserId: userId,
+      });
     }
 
     return getProject(project.uuid, companyId);

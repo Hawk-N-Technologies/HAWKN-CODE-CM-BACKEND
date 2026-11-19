@@ -1,6 +1,7 @@
 "use strict";
 
 const { Op } = require("@sequelize/core");
+const events = require("./eventNotifications");
 const sequelize = require("../config/db");
 const Employee = require("../models/Employee");
 const User = require("../models/User");
@@ -261,6 +262,25 @@ async function saveTeam(projectUuid, userId, companyId, payload) {
         throw httpError(400, "Only testers or QA employees can be assigned.");
       }
 
+      // Who was on the team before — to notify only people newly added
+      const [oldDevelopers, oldTesters] = await Promise.all([
+        ProjectOperationDeveloper.findAll({
+          where: { projectOperationId: plan.id },
+          attributes: ["employeeId"],
+          raw: true,
+          transaction,
+        }),
+        ProjectOperationTester.findAll({
+          where: { projectOperationId: plan.id },
+          attributes: ["employeeId"],
+          raw: true,
+          transaction,
+        }),
+      ]);
+      const previousLeadId = plan.projectLeadId;
+      const hadDeveloper = new Set(oldDevelopers.map((row) => Number(row.employeeId)));
+      const hadTester = new Set(oldTesters.map((row) => Number(row.employeeId)));
+
       await plan.update({ projectLeadId, updatedBy: userId }, { transaction });
 
       // Keep ONE lead per project: the project's lead must match the plan's
@@ -300,9 +320,35 @@ async function saveTeam(projectUuid, userId, companyId, payload) {
         );
       }
 
-      return { success: true };
+      return {
+        projectId: plan.projectId,
+        newLeadId:
+          Number(previousLeadId) !== projectLeadId ? projectLeadId : null,
+        addedDevelopers: normalizedDevelopers.filter((id) => !hadDeveloper.has(id)),
+        addedTesters: normalizedTesters.filter((id) => !hadTester.has(id)),
+      };
     })
-    .then(() => ({ success: true }));
+    .then(async (changes) => {
+      // After commit: tell only the people who were newly added
+      await events.teamMembersAdded({
+        companyId,
+        projectId: changes.projectId,
+        developerEmployeeIds: changes.addedDevelopers,
+        testerEmployeeIds: changes.addedTesters,
+        byUserId: userId,
+      });
+
+      if (changes.newLeadId) {
+        await events.projectLeadAssigned({
+          companyId,
+          projectId: changes.projectId,
+          leadEmployeeId: changes.newLeadId,
+          byUserId: userId,
+        });
+      }
+
+      return { success: true };
+    });
 }
 
 module.exports = { getLeadProjects, getTeam, saveTeam };
