@@ -46,6 +46,8 @@ const developerTestingRoutes = require("./routes/developerTestingRoutes");
 const adminOverviewRoutes = require("./routes/adminOverviewRoutes");
 const deliveryRoutes = require("./routes/deliveryRoutes");
 const testingRoutes = require("./routes/testingRoutes");
+const sopRoutes = require("./routes/sopRoutes");
+const bdDashboardRoutes = require("./routes/bdDashboardRoutes");
 const http = require("http");
 const notificationRoutes = require("./routes/notificationRoutes");
 const manualAttendanceRoutes = require("./routes/manualAttendanceRoutes");
@@ -139,6 +141,8 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminOverviewRoutes);
 app.use("/api/deliveries", deliveryRoutes);
 app.use("/api/testing", testingRoutes);
+app.use("/api/sops", sopRoutes);
+app.use("/api/bd", bdDashboardRoutes);
 app.use("/api/attendance/manual", manualAttendanceRoutes);
 app.use(errorHandler);
 
