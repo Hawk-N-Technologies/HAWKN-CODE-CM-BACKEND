@@ -2,6 +2,7 @@ const Notification = require("../models/Notification");
 const User = require("../models/User");
 const Role = require("../models/Role");
 const { getNotificationSocket } = require("../utils/notificationSocket");
+const pushService = require("./pushService");
 
 async function createForRecipients({
   companyId,
@@ -42,6 +43,20 @@ async function createForRecipients({
         .to(`user:${companyId}:${notification.recipientUserId}`)
         .emit("notification:new", notification.toJSON());
     }
+  }
+
+  // Also pop up on phones/laptops where alerts are on. Not awaited: a slow
+  // or failed alert never delays or breaks the action that caused it.
+  if (created.length) {
+    const first = created[0];
+    pushService
+      .sendToUsers(companyId, uniqueIds, {
+        title,
+        message,
+        link,
+        uuid: first.uuid,
+      })
+      .catch(() => {});
   }
 
   return created;
@@ -133,6 +148,8 @@ async function markAllRead({ companyId, userId }) {
 }
 
 module.exports = {
+  // Notify specific users: { companyId, recipientUserIds, type, title, message, link, eventKey, metadata }
+  notifyUsers: createForRecipients,
   notifyAdmins,
   notifyHR,
   notifyUser,

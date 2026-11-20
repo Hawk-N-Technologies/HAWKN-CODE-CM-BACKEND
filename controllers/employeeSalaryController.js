@@ -88,7 +88,7 @@ const getPayrollCalculation = async (req, res, next) => {
       data: result,
     });
   } catch (error) {
-    console.error("Failed to calculate payroll:", error);
+    logger.error("Failed to calculate payroll", { error: error?.message, stack: error?.stack });
 
     return next(error);
   }

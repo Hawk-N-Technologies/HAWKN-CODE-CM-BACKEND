@@ -1,4 +1,5 @@
 const employeeLeaveService = require("../services/employeeLeaveService");
+const logger = require("../utils/logger");
 
 async function getLeaveRequests(req, res, next) {
   try {
@@ -49,7 +50,7 @@ async function updateLeaveRequest(req, res, next) {
       data: leave,
     });
   } catch (error) {
-    console.error("Update leave request controller failed:", error);
+    logger.error("Update leave request controller failed", { error: error?.message, stack: error?.stack });
 
     next(error);
   }
@@ -58,7 +59,6 @@ async function updateLeaveRequest(req, res, next) {
 async function createLeaveRequest(req, res) {
   try {
     // Assuming auth middleware puts employee information in req.user
-    console.log(req.user);
     const userId = req.user.userId;
     const companyId = req.user.companyId;
 
@@ -79,7 +79,7 @@ async function createLeaveRequest(req, res) {
       data: leave,
     });
   } catch (error) {
-    console.error("Create leave request error:", error);
+    logger.error("Create leave request error", { error: error?.message, stack: error?.stack });
 
     return res.status(400).json({
       success: false,
@@ -106,7 +106,7 @@ const getMyLeaves = async (req, res) => {
       data: leaves,
     });
   } catch (error) {
-    console.error("Get my leaves error:", error);
+    logger.error("Get my leaves error", { error: error?.message, stack: error?.stack });
 
     return res.status(400).json({
       success: false,

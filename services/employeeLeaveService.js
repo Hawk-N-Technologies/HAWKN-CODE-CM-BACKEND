@@ -4,6 +4,7 @@ const { Op } = require("@sequelize/core");
 const User = require("../models/User");
 const notificationService = require("./notificationService");
 const Sequelize = require("../config/db");
+const logger = require("../utils/logger");
 async function getLeaveRequests(
   companyId,
   {
@@ -131,7 +132,7 @@ async function getLeaveRequests(
       },
     };
   } catch (error) {
-    console.error("Failed to fetch leave requests:", error);
+    logger.error("Failed to fetch leave requests", { error: error?.message, stack: error?.stack });
     throw error;
   }
 }
@@ -267,16 +268,13 @@ async function updateLeaveRequest(companyId, uuid, data) {
         }
       } catch (notificationError) {
         // Do not roll back a valid HR decision because a notification failed.
-        console.error(
-          "Failed to notify employee about leave decision:",
-          notificationError,
-        );
+        logger.error("Failed to notify employee about leave decision", { error: notificationError?.message, stack: notificationError?.stack });
       }
     }
 
     return leave;
   } catch (error) {
-    console.error("Failed to update leave request:", error);
+    logger.error("Failed to update leave request", { error: error?.message, stack: error?.stack });
     throw error;
   }
 }
@@ -289,7 +287,6 @@ const createLeaveRequest = async ({
   leaveSession = "FULL_DAY",
   reason,
 }) => {
-  console.log(leaveDate);
 
   // Check employee.
   const employee = await Employee.findOne({
@@ -326,8 +323,6 @@ const createLeaveRequest = async ({
 
     // FIRST_HALF + SECOND_HALF is allowed.
   }
-
-  console.log(employee, companyId);
 
   const leave = await EmployeeLeave.create({
     employeeId: employee.id,
@@ -368,10 +363,7 @@ const createLeaveRequest = async ({
     });
   } catch (notificationError) {
     // A notification outage must not make a successfully created leave appear to fail.
-    console.error(
-      "Failed to notify HR about leave request:",
-      notificationError,
-    );
+    logger.error("Failed to notify HR about leave request", { error: notificationError?.message, stack: notificationError?.stack });
   }
 
   return leave;

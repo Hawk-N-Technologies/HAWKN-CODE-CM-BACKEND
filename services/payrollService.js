@@ -296,13 +296,6 @@ async function listPayroll(companyId, filters = {}) {
       required: hasUserUuid || hasSearch,
     };
 
-    console.log("SORT DEBUG:", {
-      receivedSortBy: filters.sortBy,
-      receivedSortOrder: filters.sortOrder,
-      finalSortField: sortField,
-      finalSortDirection: sortDirection,
-    });
-
     // 8. Fetch payroll records
     const { count, rows } = await Payroll.findAndCountAll({
       where,
@@ -459,7 +452,6 @@ async function getPayrollByUuid(uuid, companyId) {
  * Single conditional UPDATE, so two clicks at once can't process twice.
  */
 async function processPayroll(uuid, companyId, processedByUserId) {
-  console.log(uuid);
   try {
     const [updatedCount] = await Payroll.update(
       {

@@ -14,9 +14,9 @@ const isMysql = dbUrl.startsWith("mysql://");
 const sequelize = new Sequelize({
   dialect: isMysql ? MySqlDialect : PostgresDialect,
   url: dbUrl,
+  // India time for Postgres (attendance / notification dates depend on it)
+  ...(isMysql ? {} : { timezone: "Asia/Kolkata" }),
   logging: process.env.NODE_ENV === "development" ? console.log : false,
 });
 
 module.exports = sequelize;
-
-

@@ -23,6 +23,9 @@ const ProjectOperationTester = require("../models/ProjectOperationTester");
 const TaskTesting = require("../models/TaskTesting");
 const TaskTester = require("../models/TaskTester");
 const notificationService = require("./notificationService");
+const logger = require("../utils/logger");
+// Safety cap for lists that keep growing (until they get real pagination)
+const MAX_LIST_ROWS = 1000;
 const TASK_FIELDS = [
   "title",
   "description",
@@ -170,7 +173,7 @@ const validateModuleAndPhase = async ({ projectId, moduleId, phaseId }) => {
   return { projectModule, projectPhase };
 };
 
-const validateAssignment = async (assignedTo) => {
+const validateAssignment = async (assignedTo, companyId) => {
   if (assignedTo === undefined || assignedTo === null) {
     return;
   }
@@ -179,10 +182,14 @@ const validateAssignment = async (assignedTo) => {
     throw new Error("assignedTo must be a valid employee ID");
   }
 
-  const employee = await Employee.findByPk(assignedTo);
+  // Only an employee of the SAME company as the project can be assigned
+  const employee = await Employee.findOne({
+    where: { id: Number(assignedTo), companyId },
+    attributes: ["id"],
+  });
 
   if (!employee) {
-    throw new Error("Assigned employee not found");
+    throw new Error("Assigned employee must belong to this project's company");
   }
 };
 
@@ -242,7 +249,7 @@ const notifyDeveloperTaskAssigned = async ({
     });
   } catch (error) {
     // Notification failure must not undo a successfully saved task.
-    console.error("Failed to send developer task notification:", error);
+    logger.error("Failed to send developer task notification", { error: error?.message, stack: error?.stack });
   }
 };
 
@@ -263,7 +270,7 @@ const createTask = async (projectUuid, body, userId) => {
     phaseId: values.phaseId,
   });
 
-  await validateAssignment(values.assignedTo);
+  await validateAssignment(values.assignedTo, project.companyId);
 
   if (values.isBlocked === undefined) {
     values.isBlocked = false;
@@ -337,6 +344,7 @@ const listProjectTasks = async (projectUuid, filters = {}) => {
 
   const tasks = await ProjectTask.findAll({
     where,
+    limit: MAX_LIST_ROWS,
     include: [
       {
         model: TaskTester,
@@ -381,9 +389,6 @@ const listProjectTasks = async (projectUuid, filters = {}) => {
       ["createdAt", "DESC"],
     ],
   });
-
-  console.log(tasks);
-  console.log(project.uuid);
 
   return tasks.map((task) => ({
     ...task.toJSON(),
@@ -566,7 +571,13 @@ const updateTask = async (uuid, body) => {
     }
 
     if (hasOwn(values, "assignedTo")) {
-      await validateAssignment(values.assignedTo);
+      const taskProject = await Project.findOne({
+        where: { id: task.projectId },
+        attributes: ["companyId"],
+        transaction,
+      });
+
+      await validateAssignment(values.assignedTo, taskProject?.companyId);
     }
 
     if (values.isBlocked === true) {
@@ -740,6 +751,7 @@ async function getMyTasks(userId, companyId) {
     where: {
       assignedTo: employeeId,
     },
+    limit: MAX_LIST_ROWS,
     include: [
       {
         model: Project,
@@ -904,17 +916,27 @@ async function updateMyTaskStatus(taskUuid, userId, companyId, status) {
 
 async function taskDropdown(phaseId) {
   try {
+    // Company access is checked by the route (requireProjectAccess)
     const phase = await ProjectPhase.findOne({
       where: {
         uuid: phaseId,
       },
+      attributes: ["id"],
     });
+
+    if (!phase) {
+      const error = new Error("Phase not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
     const tasks = await ProjectTask.findAll({
       where: {
-        id: phase.id,
+        phaseId: phase.id,
       },
       attributes: ["id", "uuid", "title"],
       order: [["title", "ASC"]],
+      limit: MAX_LIST_ROWS,
     });
 
     return tasks.map((task) => ({
@@ -923,7 +945,7 @@ async function taskDropdown(phaseId) {
       name: task.title,
     }));
   } catch (error) {
-    console.error("Task dropdown service error:", error);
+    logger.error("Task dropdown service error", { error: error?.message, stack: error?.stack });
     throw error;
   }
 }

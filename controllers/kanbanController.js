@@ -1,4 +1,5 @@
 const kanbanService = require("../services/kanbanService");
+const logger = require("../utils/logger");
 
 function getCompanyId(req) {
   return req.user?.companyId ?? req.user?.company_id ?? null;
@@ -18,7 +19,7 @@ const getBoard = async (req, res) => {
       count: data.count,
     });
   } catch (error) {
-    console.error("Get Kanban board error:", error);
+    logger.error("Get Kanban board error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -45,7 +46,7 @@ const updateTaskStatus = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error("Update task status error:", error);
+    logger.error("Update task status error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,
@@ -72,7 +73,7 @@ const updateTestingResult = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error("Update testing result error:", error);
+    logger.error("Update testing result error", { error: error?.message, stack: error?.stack });
 
     return res.status(error.statusCode || 500).json({
       success: false,

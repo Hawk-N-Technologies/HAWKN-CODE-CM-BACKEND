@@ -9,6 +9,12 @@ const sequelize = require("../config/db");
 const logger = require("../utils/logger");
 const { Op, Transaction } = require("@sequelize/core");
 const notificationService = require("./notificationService");
+const events = require("./eventNotifications");
+
+// A BRD can be referenced by its UUID or its numeric id (both supported so
+// existing pages keep working). Admin access to every BRD is intentional.
+const { refWhere } = require("../middleware/projectAccess");
+const brdWhere = (brdId) => refWhere(String(brdId ?? "")) ?? { id: -1 };
 
 const ADMIN_ROLE = "admin";
 async function uploadBRD({ projectUuid, companyId, userId, file }) {
@@ -540,7 +546,8 @@ const getAdminBRDs = async ({ status, search }) => {
 
 // Fetch one BRD with versions and review history.
 const getAdminBRDById = async (brdId) => {
-  const brd = await BRD.findByPk(brdId, {
+  const brd = await BRD.findOne({
+    where: brdWhere(brdId),
     include: getBRDIncludes(),
   });
 
@@ -579,7 +586,8 @@ const decideBRD = async ({ brdId, reviewerId, action, message }) => {
     },
     async (transaction) => {
       // Lock the BRD row so two admins cannot decide simultaneously.
-      const brd = await BRD.findByPk(brdId, {
+      const brd = await BRD.findOne({
+        where: brdWhere(brdId),
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
@@ -641,9 +649,15 @@ const decideBRD = async ({ brdId, reviewerId, action, message }) => {
   // Notify the BDE who originally submitted this BRD.
   // This runs only after the Admin decision transaction commits.
   try {
-    const brd = await BRD.findByPk(brdId, {
-      attributes: ["id", "uuid", "title", "createdBy", "companyId"],
+    const brd = await BRD.findOne({
+      where: brdWhere(brdId),
+      attributes: ["id", "uuid", "title", "createdBy", "companyId", "clientId"],
     });
+
+    // Admin approved → the client now has to approve it
+    if (brd && result.status === "PENDING_CLIENT_APPROVAL") {
+      await events.brdNeedsClientApproval({ companyId: brd.companyId, brd });
+    }
 
     if (brd?.createdBy) {
       const approved = action === "APPROVED";
@@ -782,7 +796,7 @@ async function getClientBRDById({ brdId, userId }) {
 
   const brd = await BRD.findOne({
     where: {
-      id: brdId,
+      ...brdWhere(brdId),
       clientId: client.id,
     },
     include: getClientBRDIncludes(),
@@ -826,7 +840,7 @@ async function decideClientBRD({ brdId, userId, action, message }) {
 
     const brd = await BRD.findOne({
       where: {
-        id: brdId,
+        ...brdWhere(brdId),
         clientId: client.id,
       },
       transaction,
@@ -889,7 +903,8 @@ async function decideClientBRD({ brdId, userId, action, message }) {
 
   // Notify the original BDE after the Client decision commits.
   try {
-    const brd = await BRD.findByPk(brdId, {
+    const brd = await BRD.findOne({
+      where: brdWhere(brdId),
       attributes: ["id", "uuid", "title", "createdBy", "companyId"],
     });
 

@@ -6,6 +6,7 @@ const Role = require("../models/Role");
 const bcrypt = require("bcrypt");
 const Project = require("../models/Project");
 const { Op } = require("@sequelize/core");
+const logger = require("../utils/logger");
 
 const createClient = async ({
   companyId,
@@ -184,7 +185,8 @@ async function getClients(
       },
     };
   } catch (error) {
-    console.log(error);
+    logger.error("Failed to fetch clients", { companyId, error: error?.message, stack: error?.stack });
+    throw error;
   }
 }
 
@@ -348,18 +350,24 @@ async function clientProjectsDropdown(userId) {
       where: {
         userId: userId,
       },
+      attributes: ["id", "companyId"],
     });
-    console.log(client);
+
+    // No client profile for this login → nothing to show (was a crash)
+    if (!client) return [];
+
     const projects = await Project.findAll({
       where: {
         clientId: client.id,
+        companyId: client.companyId,
       },
       attributes: ["id", "uuid", "name"],
     });
 
     return projects;
   } catch (error) {
-    console.log(error);
+    logger.error("Failed to fetch client projects dropdown", { userId, error: error?.message, stack: error?.stack });
+    throw error;
   }
 }
 

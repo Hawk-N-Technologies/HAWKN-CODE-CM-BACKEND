@@ -107,8 +107,6 @@ async function getPlanning(projectUuid, userId, companyId) {
     where: { projectId: project.id, companyId },
   });
 
-  console.log(operation);
-
   return serialize(project, operation);
 }
 
@@ -137,7 +135,6 @@ async function savePlanning(projectUuid, userId, companyId, payload, files) {
   let operation = await ProjectOperation.findOne({
     where: { projectId: project.id, companyId },
   });
-  console.log(operation);
   const updates = {
     technologyStack: technologyStack || null,
     planningStatus: "IN_PROGRESS",

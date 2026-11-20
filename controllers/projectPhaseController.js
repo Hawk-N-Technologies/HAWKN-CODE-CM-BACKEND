@@ -1,4 +1,6 @@
 const projectPhaseService = require("../services/projectPhaseService");
+const events = require("../services/eventNotifications");
+const logger = require("../utils/logger");
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -23,6 +25,7 @@ const isValidDate = (value) => {
 
 const validatePhaseData = (body, isUpdate = false) => {
   const { name, description, startDate, endDate, status, sortOrder } = body;
+  const { needsClientApproval } = body;
 
   if (!isUpdate || name !== undefined) {
     if (typeof name !== "string" || !name.trim()) {
@@ -48,6 +51,10 @@ const validatePhaseData = (body, isUpdate = false) => {
 
   if (status !== undefined && !STATUSES.includes(status)) {
     return "Invalid phase status.";
+  }
+
+  if (needsClientApproval !== undefined && typeof needsClientApproval !== "boolean") {
+    return "Needs client approval must be true or false.";
   }
 
   if (
@@ -90,7 +97,7 @@ const handleError = (res, error, action) => {
     });
   }
 
-  console.error(`${action} error:`, error);
+  logger.error(`${action} error`, { error: error?.message, stack: error?.stack });
 
   return res.status(500).json({
     message: `Failed to ${action}.`,
@@ -115,6 +122,7 @@ const createPhase = async (req, res) => {
 
     const { name, description, startDate, endDate, status, sortOrder } =
       req.body;
+    const { needsClientApproval } = req.body;
 
     const result = await projectPhaseService.createPhase(
       projectUuid,
@@ -126,6 +134,7 @@ const createPhase = async (req, res) => {
         endDate,
         status,
         sortOrder,
+        needsClientApproval,
       },
     );
 
@@ -249,6 +258,7 @@ const updatePhase = async (req, res) => {
       "endDate",
       "status",
       "sortOrder",
+      "needsClientApproval",
     ]) {
       if (Object.hasOwn(req.body, field)) {
         updates[field] = req.body[field];
@@ -256,6 +266,29 @@ const updatePhase = async (req, res) => {
     }
 
     const updatedPhase = await projectPhaseService.updatePhase(uuid, updates);
+
+    // Phase just marked Completed → tell Admin
+    if (
+      updatedPhase &&
+      updatedPhase.status === "Completed" &&
+      phase.status !== "Completed"
+    ) {
+      await events.phaseCompleted({
+        companyId: req.user.companyId,
+        projectId: updatedPhase.projectId,
+        phase: updatedPhase,
+        byUserId: req.user.userId,
+      });
+    }
+
+    // Now waiting on the client (lead ticked "Needs client approval" on a passed phase)
+    if (
+      updatedPhase &&
+      updatedPhase.clientApprovalStatus === "Pending" &&
+      phase.clientApprovalStatus !== "Pending"
+    ) {
+      await events.phaseNeedsClientApproval(updatedPhase, req.user.companyId);
+    }
 
     return res.status(200).json({
       message: "Phase updated successfully.",

@@ -1,7 +1,12 @@
 require("./config/env");
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const sequelize = require("./config/db");
+const {
+  checkProductionConfig,
+  findActiveDemoAccounts,
+} = require("./config/productionChecks");
 const { Sequelize } = require("@sequelize/core");
 
 const companyRoutes = require("./routes/companyRoutes");
@@ -43,6 +48,10 @@ const taskTestingRoutes = require("./routes/taskTestingRoutes");
 const bugsRoutes = require("./routes/bugsRoutes");
 const developerTestingRoutes = require("./routes/developerTestingRoutes");
 const adminOverviewRoutes = require("./routes/adminOverviewRoutes");
+const deliveryRoutes = require("./routes/deliveryRoutes");
+const testingRoutes = require("./routes/testingRoutes");
+const sopRoutes = require("./routes/sopRoutes");
+const bdDashboardRoutes = require("./routes/bdDashboardRoutes");
 const http = require("http");
 const notificationRoutes = require("./routes/notificationRoutes");
 const manualAttendanceRoutes = require("./routes/manualAttendanceRoutes");
@@ -50,20 +59,45 @@ const { initializeNotificationSocket } = require("./utils/notificationSocket");
 const User = require("./models/User");
 
 require("./models/associations");
+const responseStandards = require("./middleware/responseStandards");
 // const tempCompanyContext = require("./middlewares/tempCompanyContext");
 const app = express();
+// Security headers. This server is a JSON/file API (no HTML pages), so:
+//  - contentSecurityPolicy off: protects HTML pages only, and can break the
+//    browser's PDF viewer when a BRD is opened in a new tab
+//  - crossOriginResourcePolicy "same-site": the portal on another
+//    *.hawkntechnologies.com subdomain can still load files from this API
+// Everything else (nosniff, anti-clickjacking, HSTS, no X-Powered-By, …) stays on.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "same-site" },
+  }),
+);
+
+// Extra allowed frontends can be added with FRONTEND_URL (comma-separated)
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://clientportal.hawkntechnologies.com",
+  ...(process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "https://clientportal.hawkntechnologies.com",
-    ],
+    origin: allowedOrigins,
+    // Login uses an HttpOnly cookie — the browser only sends it cross-origin
+    // when the server allows credentials
+    credentials: true,
   }),
 );
 
 app.use(express.json());
 app.use(cookieParser());
 // app.use(tempCompanyContext);
+app.use(responseStandards);
 
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -109,6 +143,10 @@ app.use("/api/bugs", bugsRoutes);
 app.use("/api/developer/testing", developerTestingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminOverviewRoutes);
+app.use("/api/deliveries", deliveryRoutes);
+app.use("/api/testing", testingRoutes);
+app.use("/api/sops", sopRoutes);
+app.use("/api/bd", bdDashboardRoutes);
 app.use("/api/attendance/manual", manualAttendanceRoutes);
 app.use(errorHandler);
 
@@ -118,12 +156,36 @@ const httpServer = http.createServer(app);
 initializeNotificationSocket(httpServer);
 
 async function startServer() {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // Production: refuse to start with an unsafe setup (see config/productionChecks.js)
+  if (isProduction) {
+    const { errors, warnings } = checkProductionConfig();
+    warnings.forEach((message) => console.warn(`⚠️  ${message}`));
+
+    if (errors.length) {
+      errors.forEach((message) => console.error(`❌ ${message}`));
+      console.error("Server not started. Fix the settings above and start again.");
+      process.exit(1);
+    }
+  }
+
   try {
     await sequelize.authenticate();
 
     console.log(
       `PostgreSQL connected successfully [${process.env.NODE_ENV} mode]`
     );
+
+    if (isProduction) {
+      const demo = await findActiveDemoAccounts(sequelize).catch(() => []);
+      if (demo.length) {
+        console.warn(
+          `⚠️  Demo accounts are still active on this database: ${demo.join(", ")}. ` +
+            "Deactivate them before real users start (see GO_LIVE_CHECKLIST.md).",
+        );
+      }
+    }
 
     httpServer.listen(PORT, () => {
       console.log(

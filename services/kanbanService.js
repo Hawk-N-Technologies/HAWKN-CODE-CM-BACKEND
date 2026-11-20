@@ -10,6 +10,8 @@ const sequelize = require("../config/db");
 const User = require("../models/User");
 const TaskTester = require("../models/TaskTester");
 const middleware = require("../middleware/requireProjectLead");
+// Safety cap for lists that keep growing (until they get real pagination)
+const MAX_LIST_ROWS = 1000;
 const TASK_STATUSES = [
   "Backlog",
   "To Do",
@@ -159,6 +161,7 @@ async function getBoard(companyId, projectUuid) {
 
     const tasks = await ProjectTask.findAll({
       where: { projectId: project.id },
+      limit: MAX_LIST_ROWS,
       include: [
         {
           model: ProjectModule,

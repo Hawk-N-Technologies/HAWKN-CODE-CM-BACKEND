@@ -13,6 +13,8 @@ module.exports = {
     const uuidDefault = isMysql
       ? Sequelize.literal("(UUID())")
       : Sequelize.literal("gen_random_uuid()");
+    // Quote column names for the active database (MySQL `x`, Postgres "x")
+    const q = (col) => (isMysql ? `\`${col}\`` : `"${col}"`);
 
     const exist = await queryInterface.tableExists("payrolls");
     if (exist) {
@@ -194,7 +196,7 @@ module.exports = {
     await queryInterface.addConstraint("payrolls", {
       fields: ["lop_deduction", "base_salary"],
       type: "check",
-      where: Sequelize.literal("`lop_deduction` <= `base_salary`"),
+      where: Sequelize.literal(`${q("lop_deduction")} <= ${q("base_salary")}`),
       name: "chk_payrolls_lop_within_base",
     });
 
@@ -203,7 +205,7 @@ module.exports = {
       fields: ["net_salary", "base_salary", "lop_deduction", "bonus"],
       type: "check",
       where: Sequelize.literal(
-        "`net_salary` = `base_salary` - `lop_deduction` + `bonus`",
+        `${q("net_salary")} = ${q("base_salary")} - ${q("lop_deduction")} + ${q("bonus")}`,
       ),
       name: "chk_payrolls_net_formula",
     });
@@ -233,10 +235,18 @@ module.exports = {
       fields: ["status", "processed_at"],
       type: "check",
       where: Sequelize.literal(
-        "(`status` = 'Pending' AND `processed_at` IS NULL) OR " +
-          "(`status` = 'Processed' AND `processed_at` IS NOT NULL)",
+        `(${q("status")} = 'Pending' AND ${q("processed_at")} IS NULL) OR ` +
+          `(${q("status")} = 'Processed' AND ${q("processed_at")} IS NOT NULL)`,
       ),
       name: "chk_payrolls_processed_consistency",
+    });
+
+    // Pay period is always the 1st of the month (EXTRACT works on both databases)
+    await queryInterface.addConstraint("payrolls", {
+      fields: ["pay_period"],
+      type: "check",
+      where: Sequelize.literal(`EXTRACT(DAY FROM ${q("pay_period")}) = 1`),
+      name: "chk_payrolls_period_first_of_month",
     });
 
     // Fast company/date filtering

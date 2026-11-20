@@ -511,11 +511,6 @@ const calculatePayroll = async ({ companyId, userUuid, payPeriod }) => {
 
   const exclusiveEndDate = formatDate(queryEndDate);
 
-  console.log("Selected month:", selectedMonth);
-  console.log("Previous payroll:", previousPayroll?.payPeriod ?? null);
-  console.log("Payroll start:", payrollStartDate);
-  console.log("Payroll end:", payrollEndDate);
-
   // ---------------------------------------------------------
   // 5. Reject overlapping processed payrolls
   // Requires startDate and endDate in the Payroll model/database.

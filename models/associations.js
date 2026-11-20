@@ -30,6 +30,11 @@ const ProjectModule = require("./ProjectModule");
 const TaskTesting = require("./TaskTesting");
 const TaskTester = require("./TaskTester");
 const ProjectBug = require("./ProjectBug");
+const ProjectDelivery = require("./ProjectDelivery");
+const ProjectBuild = require("./ProjectBuild");
+const FieldTraining = require("./FieldTraining");
+const Sop = require("./Sop");
+const IssueReport = require("./IssueReport");
 
 /*
 |--------------------------------------------------------------------------
@@ -768,6 +773,74 @@ Employee.hasMany(ProjectBug, {
   as: "assignedBugs",
 });
 
+/*
+|--------------------------------------------------------------------------
+| Delivery & Handover
+|--------------------------------------------------------------------------
+*/
+
+Project.hasMany(ProjectDelivery, {
+  foreignKey: "projectId",
+  as: "deliveries",
+});
+
+ProjectDelivery.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+ProjectDelivery.belongsTo(User, {
+  foreignKey: "submittedBy",
+  as: "submitter",
+});
+
+ProjectDelivery.belongsTo(IssueReport, {
+  foreignKey: "followUpIssueId",
+  as: "followUpIssue",
+});
+
+/*
+|--------------------------------------------------------------------------
+| Testing module: builds, field training
+|--------------------------------------------------------------------------
+*/
+
+ProjectBuild.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+ProjectBuild.belongsTo(User, {
+  foreignKey: "testedBy",
+  as: "tester",
+});
+
+FieldTraining.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+FieldTraining.belongsTo(User, {
+  foreignKey: "createdBy",
+  as: "trainer",
+});
+
+ProjectPhase.belongsTo(User, {
+  foreignKey: "testedBy",
+  as: "phaseTester",
+});
+
+/*
+|--------------------------------------------------------------------------
+| SOPs
+|--------------------------------------------------------------------------
+*/
+
+Sop.belongsTo(User, {
+  foreignKey: "updatedBy",
+  as: "editor",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -800,6 +873,10 @@ module.exports = {
   ProjectPhase,
   ProjectTask,
   ProjectTaskDeveloper,
+  ProjectDelivery,
+  ProjectBuild,
+  FieldTraining,
+  Sop,
 
   TaskTesting,
   ProjectBug,

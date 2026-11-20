@@ -37,7 +37,6 @@ async function getPlanning(req, res, next) {
       req.user.userId,
       req.user.companyId,
     );
-    console.log(data);
     return res.json({
       success: true,
       message: "Project planning fetched successfully.",

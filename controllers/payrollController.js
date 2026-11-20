@@ -39,8 +39,6 @@ async function listPayroll(req, res, next) {
       sortBy,
       sortOrder,
     } = req.validatedQuery;
-    console.log("VALIDATED QUERY:", req.validatedQuery);
-    console.log("RAW QUERY:", req.query);
 
     const result = await payrollService.listPayroll(req.user.companyId, {
       startDate,
