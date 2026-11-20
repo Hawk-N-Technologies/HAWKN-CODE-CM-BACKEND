@@ -8,6 +8,9 @@
  *  - Team members  : added to a project's team
  *  - Client        : a BRD needs their approval
  *  - Admin         : a phase is completed
+ *  - Delivery      : tester submits → admins; admin approves → client + tester;
+ *                    admin sends back → tester; client accepts / asks for a
+ *                    follow-up → admins, testers and leads
  *
  * Each in-app notification also pops up on phones/laptops (pushService).
  * Every function here is called AFTER the change is saved, and never
@@ -248,6 +251,143 @@ function phaseCompleted({ companyId, projectId, phase, byUserId }) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Delivery & Handover
+// ---------------------------------------------------------------------------
+
+const deliveryName = (project, delivery) =>
+  `"${project.name}"${delivery.versionLabel ? ` (${delivery.versionLabel})` : ""}`;
+
+const deliveryKey = (delivery, step) =>
+  `delivery-${step}-${delivery.uuid}-${Date.now()}`;
+
+function deliverySubmitted(delivery) {
+  return safely("DELIVERY_SUBMITTED", async () => {
+    const { companyId } = delivery;
+    const project = await projectInfo(delivery.projectId, companyId);
+    if (!project) return;
+
+    await notificationService.notifyAdmins({
+      companyId,
+      type: "DELIVERY_SUBMITTED",
+      title: "Delivery waiting for approval",
+      message: `The delivery for ${deliveryName(project, delivery)} is ready for your approval.`,
+      link: "/admin/delivery",
+      eventKey: deliveryKey(delivery, "submitted"),
+      metadata: { deliveryUuid: delivery.uuid, projectUuid: project.uuid },
+      excludeUserId: delivery.submittedBy,
+    });
+  });
+}
+
+function deliverySentBack(delivery) {
+  return safely("DELIVERY_SENT_BACK", async () => {
+    const { companyId } = delivery;
+    const project = await projectInfo(delivery.projectId, companyId);
+    if (!project || !delivery.submittedBy) return;
+
+    await notify(companyId, [delivery.submittedBy], {
+      type: "DELIVERY_SENT_BACK",
+      title: "Delivery sent back",
+      message: `Admin sent back the delivery for ${deliveryName(project, delivery)}: ${delivery.adminNote}`,
+      link: "/tester/delivery",
+      eventKey: deliveryKey(delivery, "sent-back"),
+      metadata: { deliveryUuid: delivery.uuid, projectUuid: project.uuid },
+    }, delivery.reviewedBy);
+  });
+}
+
+function deliveryApproved(delivery) {
+  return safely("DELIVERY_APPROVED", async () => {
+    const { companyId } = delivery;
+    const project = await Project.findOne({
+      where: { id: delivery.projectId, companyId },
+      attributes: ["id", "uuid", "name", "clientId"],
+      raw: true,
+    });
+    if (!project) return;
+
+    const client = project.clientId
+      ? await Client.findOne({
+          where: { id: project.clientId, companyId, isActive: true },
+          attributes: ["userId"],
+          raw: true,
+        })
+      : null;
+
+    if (client?.userId) {
+      await notify(companyId, [client.userId], {
+        type: "DELIVERY_READY",
+        title: "Your delivery is ready",
+        message: `${deliveryName(project, delivery)} is ready. Please review it, then accept it or ask for a follow-up.`,
+        link: "/client/delivery",
+        eventKey: deliveryKey(delivery, "ready"),
+        metadata: { deliveryUuid: delivery.uuid, projectUuid: project.uuid },
+      });
+    }
+
+    if (delivery.submittedBy) {
+      await notify(companyId, [delivery.submittedBy], {
+        type: "DELIVERY_APPROVED",
+        title: "Delivery approved",
+        message: `Admin approved the delivery for ${deliveryName(project, delivery)}. It's now with the client.`,
+        link: "/tester/delivery",
+        eventKey: deliveryKey(delivery, "approved"),
+        metadata: { deliveryUuid: delivery.uuid, projectUuid: project.uuid },
+      }, delivery.reviewedBy);
+    }
+  });
+}
+
+// Client answered: tell admins, the project's testers and its lead(s)
+function clientAnswered(delivery, { type, title, message, testerLink }) {
+  return safely(type, async () => {
+    const { companyId } = delivery;
+    const project = await projectInfo(delivery.projectId, companyId);
+    if (!project) return;
+
+    const metadata = { deliveryUuid: delivery.uuid, projectUuid: project.uuid };
+    const text = message(deliveryName(project, delivery));
+
+    await notificationService.notifyAdmins({
+      companyId, type, title, message: text, link: "/admin/delivery",
+      eventKey: deliveryKey(delivery, `${type}-admin`), metadata,
+    });
+
+    const testers = await testerUserIds(project.id, companyId);
+    if (testers.length) {
+      await notify(companyId, testers, {
+        type, title, message: text, link: testerLink,
+        eventKey: deliveryKey(delivery, `${type}-tester`), metadata,
+      });
+    }
+
+    const leads = await leadUserIds(project.id, companyId);
+    if (leads.length) {
+      await notify(companyId, leads, {
+        type, title, message: text, link: "/project-lead/projects",
+        eventKey: deliveryKey(delivery, `${type}-lead`), metadata,
+      });
+    }
+  });
+}
+
+const deliveryAccepted = (delivery) =>
+  clientAnswered(delivery, {
+    type: "DELIVERY_ACCEPTED",
+    title: "Delivery accepted",
+    message: (name) => `The client accepted the delivery for ${name}. The project is now completed.`,
+    testerLink: "/tester/delivery",
+  });
+
+const deliveryFollowUp = (delivery) =>
+  clientAnswered(delivery, {
+    type: "DELIVERY_FOLLOW_UP",
+    title: "Client asked for a follow-up",
+    message: (name) => `The client asked for changes on the delivery for ${name}. See the Change Request in Issues.`,
+    testerLink: "/tester/issues",
+  });
+
 module.exports = {
   projectLeadAssigned,
   bugAssigned,
@@ -256,4 +396,9 @@ module.exports = {
   teamMembersAdded,
   brdNeedsClientApproval,
   phaseCompleted,
+  deliverySubmitted,
+  deliverySentBack,
+  deliveryApproved,
+  deliveryAccepted,
+  deliveryFollowUp,
 };
