@@ -7,6 +7,12 @@
  */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const isMysql = queryInterface.sequelize.dialect.name === "mysql";
+
+    const uuidDefault = isMysql
+      ? Sequelize.literal("(UUID())")
+      : Sequelize.literal("gen_random_uuid()");
+
     await queryInterface.createTable("employee_onboarding", {
       id: {
         type: Sequelize.INTEGER,
@@ -19,7 +25,7 @@ module.exports = {
         type: Sequelize.UUID,
         allowNull: false,
         unique: true,
-        defaultValue: Sequelize.literal("gen_random_uuid()"),
+        defaultValue: uuidDefault,
       },
 
       // One onboarding record per employee
@@ -50,7 +56,7 @@ module.exports = {
         onUpdate: "CASCADE",
       },
 
-      // --- Checklist (each step HR ticks off) ---
+      // --- Checklist ---
       offer_letter_signed: {
         type: Sequelize.BOOLEAN,
         allowNull: false,

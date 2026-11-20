@@ -1,3 +1,4 @@
+require("./config/env");
 const fs = require("fs");
 const path = require("path");
 const sequelize = require("./config/db");
@@ -8,9 +9,12 @@ const migrationsPath = path.join(__dirname, "migrations");
 /**
  * Remembers which migrations already ran (one row per file), so a migration
  * runs ONCE per database instead of on every `npm run migrate`.
- * On a database that existed before this table, the first run re-runs every
- * migration (they are all safe to re-run) and records them; after that,
- * only new files run.
+ *
+ * Two record tables exist for history reasons and are kept identical:
+ *  - schema_migrations (name, ran_at) — dev's tracker
+ *  - SequelizeMeta (name)             — staging's tracker
+ * A database built by either branch is read correctly: names found in one
+ * table are copied into the other, so nothing re-runs and nothing is skipped.
  */
 const SchemaMigration = sequelize.define(
   "SchemaMigration",
@@ -32,23 +36,69 @@ const SchemaMigration = sequelize.define(
   },
 );
 
+const isMysql = () => sequelize.dialect.name === "mysql";
+const metaTable = () => (isMysql() ? "`SequelizeMeta`" : '"SequelizeMeta"');
+
 const migrationFiles = () =>
   fs
     .readdirSync(migrationsPath)
     .filter((file) => file.endsWith(".js"))
     .sort();
 
+async function recordInMeta(name) {
+  await sequelize.query(`INSERT INTO ${metaTable()} (name) VALUES (?);`, {
+    replacements: [name],
+  });
+}
+
+// Creates both record tables if missing, merges them, returns the set of ran names
 async function ranMigrations() {
-  await SchemaMigration.sync(); // creates the table if it doesn't exist
-  const rows = await SchemaMigration.findAll({ attributes: ["name"], raw: true });
-  return new Set(rows.map((row) => row.name));
+  await SchemaMigration.sync(); // creates schema_migrations if it doesn't exist
+
+  await sequelize.queryInterface.createTable("SequelizeMeta", {
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      primaryKey: true,
+    },
+  });
+
+  const devRows = await SchemaMigration.findAll({ attributes: ["name"], raw: true });
+  const [metaRows] = await sequelize.query(`SELECT name FROM ${metaTable()};`);
+
+  const devNames = new Set(devRows.map((row) => row.name));
+  const metaNames = new Set(metaRows.map((row) => row.name || row.NAME));
+
+  // Bring both tables to the same list (first run after the dev→staging merge)
+  for (const name of metaNames) {
+    if (!devNames.has(name)) await SchemaMigration.create({ name });
+  }
+  for (const name of devNames) {
+    if (!metaNames.has(name)) await recordInMeta(name);
+  }
+
+  return new Set([...devNames, ...metaNames]);
 }
 
 async function migrate() {
   try {
     await sequelize.authenticate();
 
-    console.log("✅ Database connected");
+    console.log(`✅ Database connected [${process.env.NODE_ENV}]`);
+
+    // Failsafe default for UUID across dialects
+    global.uuidDefault = isMysql()
+      ? sequelize.Sequelize.literal("(UUID())")
+      : sequelize.Sequelize.literal("gen_random_uuid()");
+
+    // Proxy DataTypes and Sequelize static helpers (literal, fn, Op) without deprecation warnings
+    const migrationSequelize = new Proxy(DataTypes, {
+      get(target, prop) {
+        if (prop in target) return target[prop];
+        return sequelize.Sequelize[prop];
+      },
+    });
 
     const done = await ranMigrations();
     let ranNow = 0;
@@ -60,9 +110,10 @@ async function migrate() {
 
       const migration = require(path.join(migrationsPath, file));
 
-      await migration.up(sequelize.queryInterface, sequelize.Sequelize);
+      await migration.up(sequelize.queryInterface, migrationSequelize);
 
       await SchemaMigration.create({ name: file });
+      await recordInMeta(file);
       ranNow += 1;
 
       console.log(`✅ Completed: ${file}`);
@@ -96,7 +147,7 @@ async function seed() {
   try {
     await sequelize.authenticate();
 
-    console.log("✅ Database connected");
+    console.log(`✅ Database connected [${process.env.NODE_ENV}]`);
 
     const userSeeder = require("./seeders/userSeeder");
 
@@ -119,7 +170,7 @@ async function seed() {
 async function setupProduction() {
   try {
     await sequelize.authenticate();
-    console.log("✅ Database connected");
+    console.log(`✅ Database connected [${process.env.NODE_ENV}]`);
 
     const productionSetup = require("./seeders/productionSetup");
     const result = await productionSetup();

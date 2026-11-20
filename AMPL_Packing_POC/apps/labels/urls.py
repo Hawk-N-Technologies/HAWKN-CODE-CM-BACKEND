@@ -9,5 +9,4 @@ urlpatterns = [
     path("boxes/<str:box_uid>/qr.svg", views.box_qr_svg, name="box-qr"),
     path("uid-batches/<int:pk>/labels", views.BatchLabelsView.as_view(), name="batch-labels"),
     path("boxes/<uuid:public_id>/label", views.BoxLabelView.as_view(), name="box-label"),
-    path("boxes/<uuid:public_id>/label.pdf", views.BoxLabelPdfView.as_view(), name="box-label-pdf"),
 ]

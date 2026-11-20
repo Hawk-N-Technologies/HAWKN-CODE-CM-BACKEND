@@ -8,7 +8,6 @@ QR images are generated from the identifier each time; nothing is stored.
 """
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.views import APIView
 
@@ -19,8 +18,7 @@ from apps.common.responses import success_response
 from apps.packing.models import Box
 from apps.packing.services.box_service import user_can_pack
 
-from .pdf import box_label_pdf
-from .qr import qr_matrix, qr_svg
+from .qr import qr_svg
 
 BATCH_PAGE_SIZE = 1000
 DONE_STATUSES = (Box.Status.COMPLETED, Box.Status.VERIFIED)
@@ -110,34 +108,28 @@ class BatchLabelsView(APIView):
         })
 
 
-def _completed_box_for(user, public_id):
-    """The completed box behind a label, if this user may print it."""
-    box = get_object_or_404(
-        Box.objects.select_related("section", "config_version", "config_version__configuration"),
-        public_id=public_id,
-    )
-    if not user_can_pack(user, box.section):
-        raise AppError(
-            "SECTION_NOT_ASSIGNED",
-            "You are not assigned to this packing section.",
-            status.HTTP_403_FORBIDDEN,
-        )
-    if box.status not in DONE_STATUSES:
-        raise AppError(
-            "BOX_NOT_COMPLETED",
-            "Only a completed box has a box ID and label.",
-            status.HTTP_409_CONFLICT,
-        )
-    return box
-
-
 class BoxLabelView(APIView):
-    """GET /boxes/{public_id}/label - data for the 100 x 50 mm box label."""
+    """GET /boxes/{public_id}/label - data for the 50 x 35 mm box label."""
 
     permission_classes = [IsAmplUser]
 
     def get(self, request, public_id):
-        box = _completed_box_for(request.user, public_id)
+        box = get_object_or_404(
+            Box.objects.select_related("section", "config_version", "config_version__configuration"),
+            public_id=public_id,
+        )
+        if not user_can_pack(request.user, box.section):
+            raise AppError(
+                "SECTION_NOT_ASSIGNED",
+                "You are not assigned to this packing section.",
+                status.HTTP_403_FORBIDDEN,
+            )
+        if box.status not in DONE_STATUSES:
+            raise AppError(
+                "BOX_NOT_COMPLETED",
+                "Only a completed box has a box ID and label.",
+                status.HTTP_409_CONFLICT,
+            )
         return success_response({
             "public_id": str(box.public_id),
             "box_uid": box.box_uid,
@@ -147,24 +139,3 @@ class BoxLabelView(APIView):
             "completed_at": box.completed_at,
             "svg": qr_svg(box.box_uid),
         })
-
-
-class BoxLabelPdfView(APIView):
-    """GET /boxes/{public_id}/label.pdf - the box label as a PDF page of exactly 100 x 50 mm."""
-
-    permission_classes = [IsAmplUser]
-
-    def get(self, request, public_id):
-        box = _completed_box_for(request.user, public_id)
-        completed = timezone.localtime(box.completed_at).strftime("%d/%m/%Y") if box.completed_at else ""
-        pdf = box_label_pdf(
-            matrix=qr_matrix(box.box_uid),
-            box_uid=box.box_uid,
-            config_label=str(box.config_version),
-            total_items=box.items.count(),
-            section_code=box.section.code,
-            date_text=completed,
-        )
-        response = HttpResponse(pdf, content_type="application/pdf")
-        response["Content-Disposition"] = f'attachment; filename="{box.box_uid}.pdf"'
-        return response

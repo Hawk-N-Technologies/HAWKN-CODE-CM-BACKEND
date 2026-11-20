@@ -12,7 +12,6 @@ from apps.catalog.models import ProductUid, Sku
 from apps.catalog.services.uid_generation import generate_uids, void_uid
 from apps.common.exceptions import AppError
 from apps.packing.models import (
-    Box,
     BoxConfiguration,
     BoxConfigurationVersion,
     ConfigurationItem,
@@ -20,6 +19,7 @@ from apps.packing.models import (
     SectionOperator,
 )
 from apps.packing.services.box_service import cancel_box, complete_box, scan_product, start_box
+from apps.packing.services.verification_service import record_verification
 
 PASSWORD = "a-long-test-password"
 
@@ -27,8 +27,9 @@ PASSWORD = "a-long-test-password"
 class ReportsTests(TestCase):
     """
     Data: 10 UIDs, quantity 2 per box.
-      BOX-000001, BOX-000002 and BOX-000003 completed, one cancelled box,
-      one open box with 1 item, 1 UID voided.
+      BOX-000001 completed (not verified), BOX-000002 verified (match),
+      BOX-000003 completed with a mismatch, one cancelled box, one open box with 1 item,
+      1 UID voided.
     """
 
     @classmethod
@@ -52,8 +53,11 @@ class ReportsTests(TestCase):
             return box
 
         complete_box(box=pack(uids[0:2]), user=cls.operator)
-        complete_box(box=pack(uids[2:4]), user=cls.operator)
-        complete_box(box=pack(uids[4:6]), user=cls.operator)
+        cls.verified = complete_box(box=pack(uids[2:4]), user=cls.operator)["box"]
+        record_verification(box=cls.verified, user=cls.admin, method="RECORD_CHECK", result="MATCH")
+        cls.mismatch = complete_box(box=pack(uids[4:6]), user=cls.operator)["box"]
+        record_verification(box=cls.mismatch, user=cls.admin, method="PHYSICAL_INSPECTION",
+                            result="MISMATCH", notes="one missing")
         cancel_box(box=pack(uids[6:7]), user=cls.operator, reason="torn carton")
         pack([uids[7]])  # stays open
         void_uid(product_uid=ProductUid.objects.get(uid=uids[9]), user=cls.admin, reason="damaged")
@@ -75,7 +79,8 @@ class ReportsTests(TestCase):
     def test_dashboard_counts(self):
         data = self.client.get("/api/v1/dashboard/summary").json()["data"]
         self.assertEqual(data["product_uids"], {"total": 10, "available": 2, "in_box": 1, "packed": 6, "void": 1})
-        self.assertEqual(data["boxes"], {"open": 1, "completed": 3, "cancelled": 1})
+        self.assertEqual(data["boxes"], {"open": 1, "completed": 3, "verified": 1, "mismatch": 1,
+                                         "not_verified": 1, "cancelled": 1})
         self.assertEqual(data["today"]["boxes_completed"], 3)
         self.assertEqual(data["today"]["products_packed"], 6)
         self.assertEqual(data["uid_capacity"]["used"], 10)
@@ -87,8 +92,9 @@ class ReportsTests(TestCase):
         self.assertEqual(rows[0]["status"], "OPEN")
         done = {row["box_uid"]: row for row in rows if row["box_uid"]}
         self.assertEqual(set(done), {"BOX-000001", "BOX-000002", "BOX-000003"})
-        self.assertTrue(all(row["status"] == "COMPLETED" for row in done.values()))
-        self.assertNotIn("verification_status", rows[0])
+        self.assertEqual(done["BOX-000001"]["verification_status"], "NOT_VERIFIED")
+        self.assertEqual(done["BOX-000002"]["verification_status"], "VERIFIED")
+        self.assertEqual(done["BOX-000003"]["verification_status"], "MISMATCH")
         self.assertEqual(done["BOX-000001"]["quantity"], 2)
         self.assertEqual(done["BOX-000001"]["expected"], 2)
         self.assertEqual(done["BOX-000001"]["configuration"], "BC2 v1")
@@ -100,7 +106,9 @@ class ReportsTests(TestCase):
         def total(**params):
             return self.history(**params).json()["pagination"]["total_items"]
 
-        self.assertEqual(total(status="completed"), 3)
+        self.assertEqual(total(status="verified"), 1)
+        self.assertEqual(total(status="COMPLETED"), 2)
+        self.assertEqual(total(status="MISMATCH"), 1)
         self.assertEqual(total(status="OPEN"), 1)
         self.assertEqual(total(status="CANCELLED"), 1)
         self.assertEqual(total(section=self.section.pk), 5)
@@ -110,14 +118,6 @@ class ReportsTests(TestCase):
         today = timezone.localdate()
         self.assertEqual(total(date_from=today.isoformat(), date_to=today.isoformat()), 5)
         self.assertEqual(total(date_from=(today + timedelta(days=1)).isoformat()), 0)
-
-    def test_older_verified_box_counts_as_completed(self):
-        Box.objects.filter(box_uid="BOX-000002").update(status=Box.Status.VERIFIED)
-        data = self.client.get("/api/v1/dashboard/summary").json()["data"]
-        self.assertEqual(data["boxes"]["completed"], 3)
-        self.assertEqual(self.history(status="COMPLETED").json()["pagination"]["total_items"], 3)
-        row = self.history(q="000002").json()["data"][0]
-        self.assertEqual(row["status"], "COMPLETED")
 
     def test_invalid_date(self):
         response = self.history(date_from="14-11-2026")

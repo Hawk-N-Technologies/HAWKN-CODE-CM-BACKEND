@@ -1,7 +1,7 @@
+require("./config/env");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
-require("dotenv").config();
 const sequelize = require("./config/db");
 const {
   checkProductionConfig,
@@ -173,7 +173,9 @@ async function startServer() {
   try {
     await sequelize.authenticate();
 
-    console.log("PostgreSQL connected successfully");
+    console.log(
+      `PostgreSQL connected successfully [${process.env.NODE_ENV} mode]`
+    );
 
     if (isProduction) {
       const demo = await findActiveDemoAccounts(sequelize).catch(() => []);
@@ -186,10 +188,15 @@ async function startServer() {
     }
 
     httpServer.listen(PORT, () => {
-      console.log(`Server started on port ${PORT}`);
+      console.log(
+        `Server started in ${process.env.NODE_ENV} mode on port ${PORT}`
+      );
     });
   } catch (error) {
-    console.error("Database connection failed:", error.message);
+    console.error(
+      `Database connection failed [${process.env.NODE_ENV} mode]:`,
+      error.message
+    );
     process.exit(1);
   }
 }

@@ -11,6 +11,8 @@
 
 const EXAMPLE_JWT_SECRETS = new Set([
   "your-very-long-random-secret-key",
+  "your-staging-secret-key",
+  "your-production-secret-key",
   "secret",
   "changeme",
   "change-me",

@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 
 PRODUCT_UID_REGEX = r"^[1-9][0-9]{5}$"
+CODE_REGEX = r"^[A-Z0-9][A-Z0-9_-]*$"
 
 
 def normalize_code(value: str) -> str:
@@ -25,6 +26,11 @@ class Sku(models.Model):
         ordering = ["code"]
         verbose_name = "SKU"
         verbose_name_plural = "SKUs"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(code__regex=CODE_REGEX), name="ampl_sku_code_format"
+            ),
+        ]
 
     def clean(self):
         # Runs before Django checks constraints (admin and API forms), so
