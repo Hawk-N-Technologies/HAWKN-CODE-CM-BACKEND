@@ -86,6 +86,13 @@ async function migrate() {
 }
 
 async function seed() {
+  // The demo seed creates admin@gmail.com / Admin@123 — never on the live database
+  if (process.env.NODE_ENV === "production") {
+    console.error("❌ `npm run seed` creates demo accounts and is blocked in production.");
+    console.error("   For a new live database use:  npm run setup:production");
+    process.exit(1);
+  }
+
   try {
     await sequelize.authenticate();
 
@@ -101,6 +108,34 @@ async function seed() {
   } catch (error) {
     console.error("❌ Seeding failed:");
     console.error(error);
+
+    await sequelize.close();
+
+    process.exit(1);
+  }
+}
+
+// npm run setup:production → roles + company + first admin on a clean live database
+async function setupProduction() {
+  try {
+    await sequelize.authenticate();
+    console.log("✅ Database connected");
+
+    const productionSetup = require("./seeders/productionSetup");
+    const result = await productionSetup();
+
+    console.log(`✅ Roles ready`);
+    console.log(`✅ Company ${result.companyCreated ? "created" : "already exists"}: ${result.companyName}`);
+    console.log(
+      result.adminCreated
+        ? `✅ First admin created: ${result.adminEmail} — log in with the password you set.`
+        : `ℹ️  This company already has an admin (${result.adminEmail}). Nothing else was changed.`,
+    );
+
+    await sequelize.close();
+  } catch (error) {
+    console.error("❌ Setup failed:");
+    console.error(error.isSetupProblem ? error.message : error);
 
     await sequelize.close();
 
@@ -142,4 +177,6 @@ if (command === "migrate") {
   seed();
 } else if (command === "status") {
   status();
+} else if (command === "setup") {
+  setupProduction();
 }

@@ -3,6 +3,10 @@ const cors = require("cors");
 const helmet = require("helmet");
 require("dotenv").config();
 const sequelize = require("./config/db");
+const {
+  checkProductionConfig,
+  findActiveDemoAccounts,
+} = require("./config/productionChecks");
 const { Sequelize } = require("@sequelize/core");
 
 const companyRoutes = require("./routes/companyRoutes");
@@ -152,10 +156,34 @@ const httpServer = http.createServer(app);
 initializeNotificationSocket(httpServer);
 
 async function startServer() {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // Production: refuse to start with an unsafe setup (see config/productionChecks.js)
+  if (isProduction) {
+    const { errors, warnings } = checkProductionConfig();
+    warnings.forEach((message) => console.warn(`⚠️  ${message}`));
+
+    if (errors.length) {
+      errors.forEach((message) => console.error(`❌ ${message}`));
+      console.error("Server not started. Fix the settings above and start again.");
+      process.exit(1);
+    }
+  }
+
   try {
     await sequelize.authenticate();
 
     console.log("PostgreSQL connected successfully");
+
+    if (isProduction) {
+      const demo = await findActiveDemoAccounts(sequelize).catch(() => []);
+      if (demo.length) {
+        console.warn(
+          `⚠️  Demo accounts are still active on this database: ${demo.join(", ")}. ` +
+            "Deactivate them before real users start (see GO_LIVE_CHECKLIST.md).",
+        );
+      }
+    }
 
     httpServer.listen(PORT, () => {
       console.log(`Server started on port ${PORT}`);
