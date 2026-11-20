@@ -1288,3 +1288,107 @@ describe("BD Dashboard", () => {
     assert.ok(!other.recentLeads.some((row) => row.email === "prospect@test.com"));
   });
 });
+
+describe("Production readiness", () => {
+  const { spawnSync } = require("node:child_process");
+  const path = require("node:path");
+  const { checkProductionConfig, findActiveDemoAccounts } = require("../config/productionChecks");
+
+  const ROOT = path.join(__dirname, "..");
+  const STRONG_SECRET = "x".repeat(16) + "Kq83!pZ2wLm9vRt4Yc7";
+  // Run a backend command as the live server would (NODE_ENV=production)
+  const runCommand = (args, extraEnv = {}) =>
+    spawnSync(process.execPath, args, {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        DATABASE_URL: helpers.testDatabaseUrl(),
+        JWT_SECRET: STRONG_SECRET,
+        DOTENV_CONFIG_QUIET: "true",
+        ...extraEnv,
+      },
+      encoding: "utf8",
+      timeout: 30000,
+    });
+
+  it("startup checks refuse unsafe settings", () => {
+    const base = { DATABASE_URL: "postgresql://u:p@db.internal:5432/hawkn", VAPID_PUBLIC_KEY: "a", VAPID_PRIVATE_KEY: "b", VAPID_SUBJECT: "mailto:x@y.z" };
+
+    assert.deepEqual(checkProductionConfig({ ...base, JWT_SECRET: STRONG_SECRET }), { errors: [], warnings: [] });
+    assert.match(checkProductionConfig({ ...base, JWT_SECRET: "your-very-long-random-secret-key" }).errors[0], /example value/);
+    assert.match(checkProductionConfig({ ...base, JWT_SECRET: "short-secret" }).errors[0], /too short/);
+    assert.match(checkProductionConfig({ ...base, JWT_SECRET: "" }).errors[0], /JWT_SECRET is not set/);
+    assert.match(checkProductionConfig({ JWT_SECRET: STRONG_SECRET }).errors.join(" "), /DATABASE_URL is not set/);
+
+    const warn = checkProductionConfig({ JWT_SECRET: STRONG_SECRET, DATABASE_URL: "postgresql://u:p@localhost:5432/x" }).warnings.join(" ");
+    assert.match(warn, /localhost/);
+    assert.match(warn, /alerts are turned off/);
+  });
+
+  it("finds active demo accounts on the database", async () => {
+    const demo = await findActiveDemoAccounts(sequelize);
+    assert.ok(demo.includes("hr@gmail.com"));
+  });
+
+  it("the server won't start in production with an unsafe JWT secret", () => {
+    const res = runCommand(["server.js"], { JWT_SECRET: "your-very-long-random-secret-key", PORT: "3997" });
+    assert.equal(res.status, 1, res.stdout + res.stderr);
+    assert.match(res.stderr, /example value/);
+    assert.match(res.stderr, /Server not started/);
+  });
+
+  it("`npm run seed` (demo accounts) is blocked in production", async () => {
+    await run(`UPDATE users SET email = 'admin.renamed@test.com' WHERE email = 'admin@gmail.com'`);
+    const res = runCommand(["scripts.js", "seed"]);
+    try {
+      assert.equal(res.status, 1, res.stdout + res.stderr);
+      assert.match(res.stderr, /blocked in production/);
+      assert.equal((await one(`SELECT count(*)::int AS n FROM users WHERE email = 'admin@gmail.com'`)).n, 0, "no demo admin was created");
+    } finally {
+      await run(`UPDATE users SET email = 'admin@gmail.com' WHERE email = 'admin.renamed@test.com'`);
+    }
+  });
+
+  it("setup:production creates roles, the company and a real first admin — once", async () => {
+    const settings = {
+      COMPANY_NAME: "Live Company Test",
+      FIRST_ADMIN_EMAIL: "owner@livecompany.test",
+      FIRST_ADMIN_PASSWORD: "Str0ng!Passw0rd#2026",
+      FIRST_ADMIN_FIRST_NAME: "Riya",
+      FIRST_ADMIN_LAST_NAME: "Owner",
+    };
+
+    const weak = runCommand(["scripts.js", "setup"], { ...settings, FIRST_ADMIN_PASSWORD: "Admin@123" });
+    assert.equal(weak.status, 1);
+    assert.match(weak.stderr, /12–72 characters/);
+
+    const demo = runCommand(["scripts.js", "setup"], { ...settings, FIRST_ADMIN_EMAIL: "admin@gmail.com" });
+    assert.equal(demo.status, 1);
+    assert.match(demo.stderr, /demo account/);
+
+    const ok = runCommand(["scripts.js", "setup"], settings);
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+    assert.match(ok.stdout, /First admin created: owner@livecompany.test/);
+    assert.ok(!ok.stdout.includes(settings.FIRST_ADMIN_PASSWORD), "password is never printed");
+
+    const admin = await one(
+      `SELECT r.name AS role, c.name AS company, u.is_active
+       FROM users u JOIN roles r ON r.id = u.role_id JOIN companies c ON c.id = u.company_id
+       WHERE u.email = 'owner@livecompany.test'`,
+    );
+    assert.deepEqual(admin, { role: "admin", company: "Live Company Test", is_active: true });
+
+    // The new admin can log in, and only sees their own (empty) company
+    const owner = await helpers.Session.login("owner@livecompany.test", settings.FIRST_ADMIN_PASSWORD);
+    const projects = await owner.request("GET", "/admin/projects?limit=100");
+    assert.equal(projects.status, 200);
+    assert.equal(projects.body.data.projects.length, 0);
+
+    // Running it again changes nothing
+    const again = runCommand(["scripts.js", "setup"], { ...settings, FIRST_ADMIN_EMAIL: "second@livecompany.test" });
+    assert.equal(again.status, 0, again.stdout + again.stderr);
+    assert.match(again.stdout, /already has an admin \(owner@livecompany.test\)/);
+    assert.equal((await one(`SELECT count(*)::int AS n FROM users WHERE email = 'second@livecompany.test'`)).n, 0);
+  });
+});

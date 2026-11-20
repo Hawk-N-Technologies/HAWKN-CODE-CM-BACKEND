@@ -9,7 +9,8 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "migrate": "node scripts.js migrate",
-    "seed": "node scripts.js seed"
+    "seed": "node scripts.js seed",
+    "setup:production": "node scripts.js setup"
   },
   "repository": {
     "type": "git",
