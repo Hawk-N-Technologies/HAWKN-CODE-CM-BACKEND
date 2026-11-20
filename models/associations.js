@@ -30,6 +30,8 @@ const ProjectModule = require("./ProjectModule");
 const TaskTesting = require("./TaskTesting");
 const TaskTester = require("./TaskTester");
 const ProjectBug = require("./ProjectBug");
+const ProjectDelivery = require("./ProjectDelivery");
+const IssueReport = require("./IssueReport");
 
 /*
 |--------------------------------------------------------------------------
@@ -768,6 +770,32 @@ Employee.hasMany(ProjectBug, {
   as: "assignedBugs",
 });
 
+/*
+|--------------------------------------------------------------------------
+| Delivery & Handover
+|--------------------------------------------------------------------------
+*/
+
+Project.hasMany(ProjectDelivery, {
+  foreignKey: "projectId",
+  as: "deliveries",
+});
+
+ProjectDelivery.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+ProjectDelivery.belongsTo(User, {
+  foreignKey: "submittedBy",
+  as: "submitter",
+});
+
+ProjectDelivery.belongsTo(IssueReport, {
+  foreignKey: "followUpIssueId",
+  as: "followUpIssue",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -800,6 +828,7 @@ module.exports = {
   ProjectPhase,
   ProjectTask,
   ProjectTaskDeveloper,
+  ProjectDelivery,
 
   TaskTesting,
   ProjectBug,

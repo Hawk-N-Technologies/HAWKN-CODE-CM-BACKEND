@@ -1,6 +1,7 @@
 const {
   fetchAdminOverview,
 } = require("../services/adminOverviewService");
+const { getMonitoring } = require("../services/developmentMonitoringService");
 
 const getAdminOverview = async (req, res, next) => {
   try {
@@ -24,4 +25,19 @@ const getAdminOverview = async (req, res, next) => {
   }
 };
 
-module.exports = { getAdminOverview };
+// Admin → Development Monitoring (read-only)
+const getDevelopmentMonitoring = async (req, res, next) => {
+  try {
+    const data = await getMonitoring(req.user.companyId);
+
+    return res.status(200).json({
+      success: true,
+      message: "Development monitoring fetched successfully",
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getAdminOverview, getDevelopmentMonitoring };

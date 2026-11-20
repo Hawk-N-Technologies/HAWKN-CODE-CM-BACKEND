@@ -838,3 +838,200 @@ describe("Project Lead dashboard numbers", () => {
     await run(`UPDATE projects SET status = :status WHERE uuid = :uuid`, { status, uuid: D.projectA2.uuid });
   });
 });
+
+describe("Development Monitoring (admin, read-only)", () => {
+  it("shows open projects, overdue tasks, open bugs and developer workload", async () => {
+    // A task 5 days overdue, assigned to Team Dev on A Project
+    const task = await S.leadA.request("POST", `/projects/${D.projectA.uuid}/tasks`, {
+      title: "Late monitoring task", assignedTo: D.teamDevId,
+    });
+    assert.equal(task.status, 201, JSON.stringify(task.body));
+    await run(
+      `UPDATE project_tasks SET due_date = (now() AT TIME ZONE 'Asia/Kolkata')::date - 5, status = 'In Progress'
+       WHERE uuid = :uuid`,
+      { uuid: task.body.data.uuid },
+    );
+
+    const res = await S.adminA.request("GET", "/admin/development-monitoring");
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const { summary, projects, overdueTasks, workload } = res.body.data;
+
+    const late = overdueTasks.find((row) => row.uuid === task.body.data.uuid);
+    assert.ok(late, "overdue task is listed");
+    assert.equal(late.daysOverdue, 5);
+    assert.equal(late.assignees, "Team Dev");
+    assert.equal(late.projectName, "A Project");
+
+    const dev = workload.find((row) => row.name === "Team Dev");
+    assert.ok(dev.openTasks >= 1 && dev.overdueTasks >= 1);
+
+    const expected = await one(
+      `SELECT count(*)::int AS n FROM project_bugs b JOIN projects p ON p.id = b.project_id
+       WHERE p.company_id = :c AND p.status NOT IN ('Completed','Cancelled')
+         AND b.status NOT IN ('Closed','Rejected')`,
+      { c: D.companyA },
+    );
+    assert.equal(summary.openBugs, expected.n);
+    assert.equal(summary.activeProjects, projects.length);
+    assert.ok(projects.some((row) => row.uuid === D.projectA.uuid));
+    assert.ok(!projects.some((row) => row.uuid === D.projectB.uuid), "no other company's projects");
+  });
+
+  it("only admins can open it, and it never changes anything", async () => {
+    assert.equal((await S.leadA.request("GET", "/admin/development-monitoring")).status, 403);
+    assert.equal((await S.testerA.request("GET", "/admin/development-monitoring")).status, 403);
+    assert.equal((await S.adminA.request("POST", "/admin/development-monitoring", {})).status, 404);
+
+    const mine = await S.adminB.request("GET", "/admin/development-monitoring");
+    assert.ok(!mine.body.data.projects.some((row) => row.uuid === D.projectA.uuid));
+  });
+});
+
+describe("Delivery & Handover", () => {
+  const note = (email, type) =>
+    one(
+      `SELECT n.message, n.link FROM notifications n JOIN users u ON u.id = n.recipient_user_id
+       WHERE u.email = :email AND n.type = :type ORDER BY n.id DESC LIMIT 1`,
+      { email, type },
+    );
+
+  const goodDelivery = () => ({
+    projectId: D.projectA.uuid,
+    versionLabel: "v1.0",
+    liveUrl: "https://alpha.example.com",
+    deliverables: ["Admin panel", "Customer website"],
+    docs: [{ title: "How to add a product", url: "https://docs.example.com/products" }],
+    notes: "Login details were shared on the call.",
+  });
+
+  it("tester sees their projects; bad input and the wrong people are refused", async () => {
+    const projects = await S.testerA.request("GET", "/deliveries/tester/projects");
+    assert.equal(projects.status, 200);
+    const a = projects.body.data.find((row) => row.uuid === D.projectA.uuid);
+    assert.equal(a.canSubmit, true);
+    assert.ok(!projects.body.data.some((row) => row.uuid === D.projectA2.uuid), "not their project");
+
+    const badLink = await S.testerA.request("POST", "/deliveries", { ...goodDelivery(), liveUrl: "javascript:alert(1)" });
+    assert.equal(badLink.status, 400);
+    const noItems = await S.testerA.request("POST", "/deliveries", { ...goodDelivery(), deliverables: [] });
+    assert.equal(noItems.status, 400);
+
+    // Not the tester of A Project / wrong role / other company
+    assert.equal((await S.testerA2.request("POST", "/deliveries", goodDelivery())).status, 404);
+    assert.equal((await S.testerB.request("POST", "/deliveries", goodDelivery())).status, 404);
+    assert.equal((await S.clientA.request("POST", "/deliveries", goodDelivery())).status, 403);
+    assert.equal((await S.leadA.request("POST", "/deliveries", goodDelivery())).status, 403);
+  });
+
+  it("submit → admin sends back with a note → tester fixes → admin approves", async () => {
+    const created = await S.testerA.request("POST", "/deliveries", goodDelivery());
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.data.status, "Pending Admin Approval");
+    D.delivery = created.body.data;
+
+    assert.match((await note("admin@gmail.com", "DELIVERY_SUBMITTED")).message, /A Project/);
+    assert.equal((await S.testerA.request("POST", "/deliveries", goodDelivery())).status, 409, "one open delivery per project");
+
+    // Client can't see it before Admin approves
+    const early = await S.clientA.request("GET", "/deliveries");
+    assert.ok(!early.body.data.some((row) => row.uuid === D.delivery.uuid));
+    assert.equal((await S.clientA.request("PATCH", `/deliveries/${D.delivery.uuid}/accept`)).status, 404);
+
+    // Send back: note required; only admins of this company
+    assert.equal((await S.adminA.request("PATCH", `/deliveries/${D.delivery.uuid}/send-back`, {})).status, 400);
+    assert.equal((await S.adminB.request("PATCH", `/deliveries/${D.delivery.uuid}/send-back`, { note: "Fix it" })).status, 404);
+    assert.equal((await S.testerA.request("PATCH", `/deliveries/${D.delivery.uuid}/approve`)).status, 403);
+
+    const back = await S.adminA.request("PATCH", `/deliveries/${D.delivery.uuid}/send-back`, { note: "Add the user guide link" });
+    assert.equal(back.status, 200);
+    assert.equal(back.body.data.status, "Sent Back");
+    assert.match((await note("tester.a@test.com", "DELIVERY_SENT_BACK")).message, /Add the user guide link/);
+    assert.equal((await S.adminA.request("PATCH", `/deliveries/${D.delivery.uuid}/approve`)).status, 409);
+
+    // Tester fixes and resubmits (same delivery)
+    const fixed = await S.testerA.request("PUT", `/deliveries/${D.delivery.uuid}`, {
+      ...goodDelivery(),
+      projectId: undefined,
+      docs: [...goodDelivery().docs, { title: "User guide", url: "https://docs.example.com/guide" }],
+    });
+    assert.equal(fixed.status, 200, JSON.stringify(fixed.body));
+    assert.equal(fixed.body.data.status, "Pending Admin Approval");
+    assert.equal(fixed.body.data.docs.length, 2);
+    assert.equal((await S.testerA.request("PUT", `/deliveries/${D.delivery.uuid}`, goodDelivery())).status, 409, "only sent-back deliveries can be edited");
+
+    const approved = await S.adminA.request("PATCH", `/deliveries/${D.delivery.uuid}/approve`);
+    assert.equal(approved.status, 200);
+    assert.equal(approved.body.data.status, "Sent to Client");
+    assert.match((await note("client.a@test.com", "DELIVERY_READY")).link, /\/client\/delivery/);
+    assert.ok(await note("tester.a@test.com", "DELIVERY_APPROVED"));
+  });
+
+  it("client sees only what's meant for them — never the codebase or internal notes", async () => {
+    const list = await S.clientA.request("GET", "/deliveries");
+    const mine = list.body.data.find((row) => row.uuid === D.delivery.uuid);
+    assert.ok(mine);
+    assert.equal(mine.liveUrl, "https://alpha.example.com");
+    assert.deepEqual(mine.deliverables, ["Admin panel", "Customer website"]);
+    for (const hidden of ["adminNote", "submittedBy", "repositoryUrl", "repository", "codebase"]) {
+      assert.ok(!(hidden in mine), `client response must not include ${hidden}`);
+    }
+    assert.ok(!JSON.stringify(list.body).match(/github|gitlab|bitbucket/i));
+
+    const other = await S.clientB.request("GET", "/deliveries");
+    assert.ok(!other.body.data.some((row) => row.uuid === D.delivery.uuid));
+    assert.equal((await S.clientB.request("PATCH", `/deliveries/${D.delivery.uuid}/accept`)).status, 404);
+    assert.equal((await S.clientA.request("PATCH", "/deliveries/not-a-uuid/accept")).status, 404);
+  });
+
+  it("follow-up raises a Change Request ticket the tester can see", async () => {
+    assert.equal((await S.clientA.request("POST", `/deliveries/${D.delivery.uuid}/follow-up`, {})).status, 400);
+
+    const res = await S.clientA.request("POST", `/deliveries/${D.delivery.uuid}/follow-up`, {
+      title: "Add a dark mode", description: "Our staff work nights.", severity: "Low",
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.status, "Follow-up Requested");
+    assert.equal(res.body.data.followUp.title, "Add a dark mode");
+
+    const ticket = await one(`SELECT classification, status, description FROM issue_reports WHERE uuid = :uuid`, {
+      uuid: res.body.data.followUp.uuid,
+    });
+    assert.equal(ticket.classification, "Change Request");
+    assert.match(ticket.description, /Raised from delivery v1.0/);
+
+    // Same ticket shows up in the client's tickets and the tester's Issues
+    const clientTickets = await S.clientA.request("GET", "/bugs/issued-bugs");
+    assert.ok(JSON.stringify(clientTickets.body).includes("Add a dark mode"));
+    const testerIssues = await S.testerA.request("GET", "/bugs/issuesForTester");
+    assert.ok(JSON.stringify(testerIssues.body).includes("Add a dark mode"));
+
+    assert.match((await note("tester.a@test.com", "DELIVERY_FOLLOW_UP")).link, /\/tester\/issues/);
+    assert.equal((await S.clientA.request("PATCH", `/deliveries/${D.delivery.uuid}/accept`)).status, 409, "already answered");
+  });
+
+  it("new delivery → approved → client accepts → project is Completed", async () => {
+    const second = await S.testerA.request("POST", "/deliveries", { ...goodDelivery(), versionLabel: "v1.1" });
+    assert.equal(second.status, 201, JSON.stringify(second.body));
+    assert.equal((await S.adminA.request("PATCH", `/deliveries/${second.body.data.uuid}/approve`)).status, 200);
+
+    const accepted = await S.clientA.request("PATCH", `/deliveries/${second.body.data.uuid}/accept`);
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+    assert.equal(accepted.body.data.status, "Accepted");
+
+    const project = await one(`SELECT status, progress FROM projects WHERE uuid = :uuid`, { uuid: D.projectA.uuid });
+    assert.equal(project.status, "Completed");
+    assert.equal(Number(project.progress), 100);
+
+    assert.ok(await note("admin@gmail.com", "DELIVERY_ACCEPTED"));
+    assert.ok(await note("lead.a@test.com", "DELIVERY_ACCEPTED"));
+
+    // Completed project: no more deliveries; history stays visible
+    const after = await S.testerA.request("GET", "/deliveries/tester/projects");
+    assert.equal(after.body.data.find((row) => row.uuid === D.projectA.uuid).canSubmit, false);
+    assert.equal((await S.testerA.request("POST", "/deliveries", goodDelivery())).status, 409);
+
+    const history = await S.adminA.request("GET", "/deliveries");
+    const statuses = history.body.data.filter((row) => row.project.uuid === D.projectA.uuid).map((row) => row.status);
+    assert.deepEqual(statuses.sort(), ["Accepted", "Follow-up Requested"]);
+  });
+});

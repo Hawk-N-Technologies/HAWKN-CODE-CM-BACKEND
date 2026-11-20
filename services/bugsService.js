@@ -1419,4 +1419,5 @@ module.exports = {
   recordRetestResult,
   createIssueReport,
   getClientIssueReports,
+  getTesterProjectIds,
 };
