@@ -31,6 +31,8 @@ const TaskTesting = require("./TaskTesting");
 const TaskTester = require("./TaskTester");
 const ProjectBug = require("./ProjectBug");
 const ProjectDelivery = require("./ProjectDelivery");
+const ProjectBuild = require("./ProjectBuild");
+const FieldTraining = require("./FieldTraining");
 const IssueReport = require("./IssueReport");
 
 /*
@@ -796,6 +798,37 @@ ProjectDelivery.belongsTo(IssueReport, {
   as: "followUpIssue",
 });
 
+/*
+|--------------------------------------------------------------------------
+| Testing module: builds, field training
+|--------------------------------------------------------------------------
+*/
+
+ProjectBuild.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+ProjectBuild.belongsTo(User, {
+  foreignKey: "testedBy",
+  as: "tester",
+});
+
+FieldTraining.belongsTo(Project, {
+  foreignKey: "projectId",
+  as: "project",
+});
+
+FieldTraining.belongsTo(User, {
+  foreignKey: "createdBy",
+  as: "trainer",
+});
+
+ProjectPhase.belongsTo(User, {
+  foreignKey: "testedBy",
+  as: "phaseTester",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -829,6 +862,8 @@ module.exports = {
   ProjectTask,
   ProjectTaskDeveloper,
   ProjectDelivery,
+  ProjectBuild,
+  FieldTraining,
 
   TaskTesting,
   ProjectBug,

@@ -1035,3 +1035,151 @@ describe("Delivery & Handover", () => {
     assert.deepEqual(statuses.sort(), ["Accepted", "Follow-up Requested"]);
   });
 });
+
+describe("Testing module", () => {
+  const note = (email, type) =>
+    one(
+      `SELECT n.message, n.link FROM notifications n JOIN users u ON u.id = n.recipient_user_id
+       WHERE u.email = :email AND n.type = :type ORDER BY n.id DESC LIMIT 1`,
+      { email, type },
+    );
+  const count = async (email, type) =>
+    (await one(
+      `SELECT count(*)::int AS n FROM notifications n JOIN users u ON u.id = n.recipient_user_id
+       WHERE u.email = :email AND n.type = :type`,
+      { email, type },
+    )).n;
+
+  it("Build Testing: tester adds a build and records the result; lead is told", async () => {
+    const good = { projectId: D.projectA.uuid, versionLabel: "v2.0", environment: "Staging", buildUrl: "https://staging.example.com" };
+
+    assert.equal((await S.testerA.request("POST", "/testing/builds", { ...good, buildUrl: "javascript:alert(1)" })).status, 400);
+    assert.equal((await S.testerA2.request("POST", "/testing/builds", good)).status, 404, "not their project");
+    assert.equal((await S.testerB.request("POST", "/testing/builds", good)).status, 404, "other company");
+    assert.equal((await S.clientA.request("POST", "/testing/builds", good)).status, 403);
+
+    const created = await S.testerA.request("POST", "/testing/builds", good);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.data.result, "Pending");
+    const uuid = created.body.data.uuid;
+
+    assert.equal((await S.testerA.request("PATCH", `/testing/builds/${uuid}/result`, { result: "Failed" })).status, 400, "failed needs a note");
+    assert.equal((await S.testerA2.request("PATCH", `/testing/builds/${uuid}/result`, { result: "Passed" })).status, 404);
+
+    const failed = await S.testerA.request("PATCH", `/testing/builds/${uuid}/result`, { result: "Failed", testNotes: "Login crashes" });
+    assert.equal(failed.status, 200);
+    assert.equal(failed.body.data.testedBy, "Tester A");
+    assert.match((await note("lead.a@test.com", "BUILD_FAILED")).message, /v2.0 \(Staging\).*Login crashes/);
+
+    const passed = await S.testerA.request("PATCH", `/testing/builds/${uuid}/result`, { result: "Passed" });
+    assert.equal(passed.body.data.result, "Passed");
+    assert.ok(await note("lead.a@test.com", "BUILD_PASSED"));
+
+    assert.ok((await S.testerA.request("GET", "/testing/builds")).body.data.some((b) => b.uuid === uuid));
+    assert.ok((await S.adminA.request("GET", "/testing/builds")).body.data.some((b) => b.uuid === uuid));
+    assert.ok(!(await S.testerA2.request("GET", "/testing/builds")).body.data.some((b) => b.uuid === uuid));
+    assert.ok(!(await S.adminB.request("GET", "/testing/builds")).body.data.some((b) => b.uuid === uuid));
+  });
+
+  it("Phase Testing → client approval (only phases the lead ticked)", async () => {
+    const base = `/projects/${D.projectA.uuid}/modules/${D.moduleA.uuid}/phases`;
+    const ui = await S.leadA.request("POST", base, { name: "UI design", needsClientApproval: true });
+    assert.equal(ui.status, 201, JSON.stringify(ui.body));
+    assert.equal(ui.body.data.needsClientApproval, true);
+    const api = await S.leadA.request("POST", base, { name: "API work" });
+    assert.equal(api.body.data.needsClientApproval, false);
+    D.uiPhase = ui.body.data.uuid;
+
+    // Tester sees the phases of their projects only
+    const list = await S.testerA.request("GET", "/testing/phases");
+    assert.ok(list.body.data.some((p) => p.uuid === D.uiPhase && p.testStatus === "Pending"));
+    assert.ok(!(await S.testerA2.request("GET", "/testing/phases")).body.data.some((p) => p.uuid === D.uiPhase));
+    assert.equal((await S.testerA2.request("PATCH", `/testing/phases/${D.uiPhase}/sign-off`, { testStatus: "Passed" })).status, 404);
+    assert.equal((await S.testerA.request("PATCH", `/testing/phases/${D.uiPhase}/sign-off`, { testStatus: "Failed" })).status, 400);
+
+    // Not passed yet → client sees nothing
+    assert.ok(!(await S.clientA.request("GET", "/testing/client/phases")).body.data.some((p) => p.uuid === D.uiPhase));
+
+    // Passed → goes to the client
+    const passed = await S.testerA.request("PATCH", `/testing/phases/${D.uiPhase}/sign-off`, { testStatus: "Passed", testNotes: "Looks right" });
+    assert.equal(passed.status, 200, JSON.stringify(passed.body));
+    assert.equal(passed.body.data.clientApprovalStatus, "Pending");
+    assert.match((await note("client.a@test.com", "PHASE_APPROVAL_NEEDED")).link, /\/client\/phase-approval/);
+    assert.ok(await note("lead.a@test.com", "PHASE_TEST_PASSED"));
+
+    // A phase without the tick never reaches the client
+    await S.testerA.request("PATCH", `/testing/phases/${api.body.data.uuid}/sign-off`, { testStatus: "Passed" });
+    const clientList = await S.clientA.request("GET", "/testing/client/phases");
+    assert.ok(clientList.body.data.some((p) => p.uuid === D.uiPhase));
+    assert.ok(!clientList.body.data.some((p) => p.uuid === api.body.data.uuid));
+    const mine = clientList.body.data.find((p) => p.uuid === D.uiPhase);
+    for (const hidden of ["testNotes", "testedBy", "testStatus"]) assert.ok(!(hidden in mine), `client must not see ${hidden}`);
+
+    // Other client / other company can't see or answer
+    assert.ok(!(await S.clientB.request("GET", "/testing/client/phases")).body.data.some((p) => p.uuid === D.uiPhase));
+    assert.equal((await S.clientB.request("PATCH", `/testing/client/phases/${D.uiPhase}/decision`, { decision: "Approved" })).status, 404);
+
+    // Changes requested needs a note → lead + tester told
+    assert.equal((await S.clientA.request("PATCH", `/testing/client/phases/${D.uiPhase}/decision`, { decision: "Changes Requested" })).status, 400);
+    const changes = await S.clientA.request("PATCH", `/testing/client/phases/${D.uiPhase}/decision`, { decision: "Changes Requested", note: "Make the buttons bigger" });
+    assert.equal(changes.status, 200);
+    assert.match((await note("lead.a@test.com", "PHASE_CLIENT_DECISION")).message, /asked for changes.*Make the buttons bigger/);
+    assert.match((await note("tester.a@test.com", "PHASE_CLIENT_DECISION")).link, /\/tester\/client-testing/);
+    assert.equal((await S.clientA.request("PATCH", `/testing/client/phases/${D.uiPhase}/decision`, { decision: "Approved" })).status, 409, "already answered");
+
+    // Fixed and re-tested → back with the client → approved
+    const again = await S.testerA.request("PATCH", `/testing/phases/${D.uiPhase}/sign-off`, { testStatus: "Passed" });
+    assert.equal(again.body.data.clientApprovalStatus, "Pending");
+    const approved = await S.clientA.request("PATCH", `/testing/client/phases/${D.uiPhase}/decision`, { decision: "Approved" });
+    assert.equal(approved.body.data.clientApprovalStatus, "Approved");
+  });
+
+  it("lead ticking / unticking 'Needs client approval' moves a passed phase to / from the client", async () => {
+    const base = `/projects/${D.projectA.uuid}/modules/${D.moduleA.uuid}/phases`;
+    const phase = (await S.leadA.request("POST", base, { name: "Reports UI" })).body.data;
+    await S.testerA.request("PATCH", `/testing/phases/${phase.uuid}/sign-off`, { testStatus: "Passed" });
+    const before = await count("client.a@test.com", "PHASE_APPROVAL_NEEDED");
+
+    assert.equal((await S.leadA.request("PUT", `/phases/${phase.uuid}`, { needsClientApproval: "yes" })).status, 400);
+    const ticked = await S.leadA.request("PUT", `/phases/${phase.uuid}`, { needsClientApproval: true });
+    assert.equal(ticked.status, 200, JSON.stringify(ticked.body));
+    assert.equal(ticked.body.data.clientApprovalStatus, "Pending");
+    assert.equal(await count("client.a@test.com", "PHASE_APPROVAL_NEEDED"), before + 1);
+
+    await S.leadA.request("PUT", `/phases/${phase.uuid}`, { needsClientApproval: false });
+    assert.ok(!(await S.clientA.request("GET", "/testing/client/phases")).body.data.some((p) => p.uuid === phase.uuid));
+
+    // Only the lead can tick it
+    assert.equal((await S.testerA.request("PUT", `/phases/${phase.uuid}`, { needsClientApproval: true })).status, 403);
+  });
+
+  it("Field Training: tester schedules, client sees it and is told about changes", async () => {
+    const at = new Date(Date.now() + 3 * 86400000).toISOString();
+    const good = { projectId: D.projectA.uuid, title: "Admin panel walkthrough", scheduledAt: at, durationMinutes: 60, meetingLink: "https://meet.google.com/abc-defg-hij" };
+
+    assert.equal((await S.testerA.request("POST", "/testing/trainings", { ...good, meetingLink: "javascript:x" })).status, 400);
+    assert.equal((await S.testerA.request("POST", "/testing/trainings", { ...good, scheduledAt: "tomorrow" })).status, 400);
+    assert.equal((await S.clientA.request("POST", "/testing/trainings", good)).status, 403);
+    assert.equal((await S.testerA2.request("POST", "/testing/trainings", good)).status, 404);
+
+    const created = await S.testerA.request("POST", "/testing/trainings", good);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.data.status, "Scheduled");
+    assert.match((await note("client.a@test.com", "TRAINING_SCHEDULED")).message, /Admin panel walkthrough/);
+
+    const clientView = await S.clientA.request("GET", "/testing/trainings");
+    assert.equal(clientView.body.data.find((t) => t.uuid === created.body.data.uuid).meetingLink, good.meetingLink);
+    assert.ok(!(await S.clientB.request("GET", "/testing/trainings")).body.data.some((t) => t.uuid === created.body.data.uuid));
+
+    const later = new Date(Date.now() + 5 * 86400000).toISOString();
+    const moved = await S.testerA.request("PUT", `/testing/trainings/${created.body.data.uuid}`, { ...good, projectId: undefined, scheduledAt: later });
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
+    assert.equal(moved.body.data.status, "Rescheduled");
+    assert.match((await note("client.a@test.com", "TRAINING_UPDATED")).message, /moved/);
+
+    const done = await S.testerA.request("PUT", `/testing/trainings/${created.body.data.uuid}`, { ...good, projectId: undefined, scheduledAt: later, status: "Completed", notes: "Went well" });
+    assert.equal(done.body.data.status, "Completed");
+    assert.equal(done.body.data.notes, "Went well");
+    assert.equal((await S.testerA2.request("PUT", `/testing/trainings/${created.body.data.uuid}`, { ...good, projectId: undefined })).status, 404);
+  });
+});

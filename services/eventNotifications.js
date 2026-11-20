@@ -8,6 +8,9 @@
  *  - Team members  : added to a project's team
  *  - Client        : a BRD needs their approval
  *  - Admin         : a phase is completed
+ *  - Testing       : build tested / phase signed off → lead; phase needs
+ *                    approval → client; client decides → lead + testers;
+ *                    training scheduled / moved / cancelled → client
  *  - Delivery      : tester submits → admins; admin approves → client + tester;
  *                    admin sends back → tester; client accepts / asks for a
  *                    follow-up → admins, testers and leads
@@ -388,6 +391,150 @@ const deliveryFollowUp = (delivery) =>
     testerLink: "/tester/issues",
   });
 
+// ---------------------------------------------------------------------------
+// Testing module
+// ---------------------------------------------------------------------------
+
+const testingKey = (step, uuid) => `testing-${step}-${uuid}-${Date.now()}`;
+
+async function clientUserIdOf(projectId, companyId) {
+  const project = await Project.findOne({
+    where: { id: projectId, companyId },
+    attributes: ["clientId"],
+    raw: true,
+  });
+  if (!project?.clientId) return null;
+
+  const client = await Client.findOne({
+    where: { id: project.clientId, companyId, isActive: true },
+    attributes: ["userId"],
+    raw: true,
+  });
+  return client?.userId ?? null;
+}
+
+// Tester recorded a build result → the project's lead(s)
+function buildTested(build) {
+  return safely("BUILD_TESTED", async () => {
+    const { companyId } = build;
+    const project = await projectInfo(build.projectId, companyId);
+    const leads = project ? await leadUserIds(project.id, companyId) : [];
+    if (!leads.length) return;
+
+    const failed = build.result === "Failed";
+    await notify(companyId, leads, {
+      type: failed ? "BUILD_FAILED" : "BUILD_PASSED",
+      title: failed ? "Build failed testing" : "Build passed testing",
+      message: `${build.versionLabel} (${build.environment}) of "${project.name}" ${failed ? "failed" : "passed"} testing.${failed && build.testNotes ? ` ${build.testNotes}` : ""}`,
+      link: "/project-lead/projects",
+      eventKey: testingKey("build", build.uuid),
+      metadata: { buildUuid: build.uuid, projectUuid: project.uuid },
+    }, build.testedBy);
+  });
+}
+
+// Tester signed off a phase → the project's lead(s)
+function phaseTested(phase, companyId) {
+  return safely("PHASE_TESTED", async () => {
+    const project = await projectInfo(phase.projectId, companyId);
+    const leads = project ? await leadUserIds(project.id, companyId) : [];
+    if (!leads.length) return;
+
+    const failed = phase.testStatus === "Failed";
+    await notify(companyId, leads, {
+      type: failed ? "PHASE_TEST_FAILED" : "PHASE_TEST_PASSED",
+      title: failed ? "Phase failed testing" : "Phase passed testing",
+      message: `Phase "${phase.name}" of "${project.name}" ${failed ? "failed" : "passed"} testing.${failed && phase.testNotes ? ` ${phase.testNotes}` : ""}`,
+      link: "/project-lead/phases",
+      eventKey: testingKey("phase", phase.uuid),
+      metadata: { phaseUuid: phase.uuid, projectUuid: project.uuid },
+    }, phase.testedBy);
+  });
+}
+
+// Phase is waiting for the client's approval → the client
+function phaseNeedsClientApproval(phase, companyId) {
+  return safely("PHASE_APPROVAL_NEEDED", async () => {
+    const project = await projectInfo(phase.projectId, companyId);
+    const clientUserId = project ? await clientUserIdOf(project.id, companyId) : null;
+    if (!clientUserId) return;
+
+    await notify(companyId, [clientUserId], {
+      type: "PHASE_APPROVAL_NEEDED",
+      title: "Please review a phase",
+      message: `Phase "${phase.name}" of "${project.name}" is ready for your approval.`,
+      link: "/client/phase-approval",
+      eventKey: testingKey("phase-approval", phase.uuid),
+      metadata: { phaseUuid: phase.uuid, projectUuid: project.uuid },
+    });
+  });
+}
+
+// Client approved / rejected / asked for changes → lead(s) + testers
+function phaseClientDecision(phase, companyId) {
+  return safely("PHASE_CLIENT_DECISION", async () => {
+    const project = await projectInfo(phase.projectId, companyId);
+    if (!project) return;
+
+    const verb = {
+      Approved: "approved",
+      Rejected: "rejected",
+      "Changes Requested": "asked for changes on",
+    }[phase.clientApprovalStatus];
+
+    const message = `The client ${verb} phase "${phase.name}" of "${project.name}".${phase.clientNote ? ` "${phase.clientNote}"` : ""}`;
+    const metadata = { phaseUuid: phase.uuid, projectUuid: project.uuid };
+
+    const leads = await leadUserIds(project.id, companyId);
+    if (leads.length) {
+      await notify(companyId, leads, {
+        type: "PHASE_CLIENT_DECISION", title: "Client answered a phase", message,
+        link: "/project-lead/phases", eventKey: testingKey("decision-lead", phase.uuid), metadata,
+      });
+    }
+
+    const testers = await testerUserIds(project.id, companyId);
+    if (testers.length) {
+      await notify(companyId, testers, {
+        type: "PHASE_CLIENT_DECISION", title: "Client answered a phase", message,
+        link: "/tester/client-testing", eventKey: testingKey("decision-tester", phase.uuid), metadata,
+      });
+    }
+  });
+}
+
+// Training scheduled / moved / cancelled → the client
+function trainingScheduled(training, change) {
+  return safely("TRAINING_SCHEDULED", async () => {
+    const { companyId } = training;
+    const project = await projectInfo(training.projectId, companyId);
+    const clientUserId = project ? await clientUserIdOf(project.id, companyId) : null;
+    if (!clientUserId) return;
+
+    const when = new Date(training.scheduledAt).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const text = {
+      scheduled: { title: "Training scheduled", message: `"${training.title}" for "${project.name}" is on ${when}.` },
+      rescheduled: { title: "Training moved", message: `"${training.title}" for "${project.name}" has moved to ${when}.` },
+      cancelled: { title: "Training cancelled", message: `"${training.title}" for "${project.name}" on ${when} was cancelled.` },
+    }[change];
+
+    await notify(companyId, [clientUserId], {
+      type: change === "scheduled" ? "TRAINING_SCHEDULED" : "TRAINING_UPDATED",
+      ...text,
+      link: "/client/training",
+      eventKey: testingKey(`training-${change}`, training.uuid),
+      metadata: { trainingUuid: training.uuid, projectUuid: project.uuid },
+    }, training.createdBy);
+  });
+}
+
 module.exports = {
   projectLeadAssigned,
   bugAssigned,
@@ -401,4 +548,9 @@ module.exports = {
   deliveryApproved,
   deliveryAccepted,
   deliveryFollowUp,
+  buildTested,
+  phaseTested,
+  phaseNeedsClientApproval,
+  phaseClientDecision,
+  trainingScheduled,
 };

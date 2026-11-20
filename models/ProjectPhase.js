@@ -77,6 +77,66 @@ const ProjectPhase = sequelize.define(
       defaultValue: 0,
       field: "sort_order",
     },
+
+    // ---- Testing module ----------------------------------------------------
+    // Lead ticks this for phases the client must approve (usually the UI phase)
+    needsClientApproval: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: "needs_client_approval",
+    },
+
+    // Tester sign-off
+    testStatus: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: "Pending",
+      field: "test_status",
+      validate: {
+        isIn: [["Pending", "Passed", "Failed"]],
+      },
+    },
+
+    testNotes: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "test_notes",
+    },
+
+    testedBy: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: "tested_by",
+    },
+
+    testedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: "tested_at",
+    },
+
+    // null = not with the client · Pending · Approved · Rejected · Changes Requested
+    clientApprovalStatus: {
+      type: DataTypes.STRING(30),
+      allowNull: true,
+      field: "client_approval_status",
+      validate: {
+        isIn: [["Pending", "Approved", "Rejected", "Changes Requested"]],
+      },
+    },
+
+    clientNote: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "client_note",
+    },
+
+    clientRespondedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: "client_responded_at",
+    },
   },
   {
     tableName: "project_phases",

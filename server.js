@@ -45,6 +45,7 @@ const bugsRoutes = require("./routes/bugsRoutes");
 const developerTestingRoutes = require("./routes/developerTestingRoutes");
 const adminOverviewRoutes = require("./routes/adminOverviewRoutes");
 const deliveryRoutes = require("./routes/deliveryRoutes");
+const testingRoutes = require("./routes/testingRoutes");
 const http = require("http");
 const notificationRoutes = require("./routes/notificationRoutes");
 const manualAttendanceRoutes = require("./routes/manualAttendanceRoutes");
@@ -137,6 +138,7 @@ app.use("/api/developer/testing", developerTestingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminOverviewRoutes);
 app.use("/api/deliveries", deliveryRoutes);
+app.use("/api/testing", testingRoutes);
 app.use("/api/attendance/manual", manualAttendanceRoutes);
 app.use(errorHandler);
 

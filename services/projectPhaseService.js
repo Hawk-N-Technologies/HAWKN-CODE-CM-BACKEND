@@ -28,6 +28,7 @@ const createPhase = async (projectUuid, moduleUuid, data) => {
     endDate: data.endDate ?? null,
     status: data.status ?? "Not Started",
     sortOrder: data.sortOrder ?? 0,
+    needsClientApproval: data.needsClientApproval === true,
   });
 
   return { data: phase };
@@ -72,6 +73,7 @@ const updatePhase = async (uuid, data) => {
     "endDate",
     "status",
     "sortOrder",
+    "needsClientApproval",
   ];
 
   const updates = {};
@@ -80,6 +82,20 @@ const updatePhase = async (uuid, data) => {
     if (Object.prototype.hasOwnProperty.call(data, field)) {
       updates[field] = field === "name" ? data[field].trim() : data[field];
     }
+  }
+
+  // Lead unticked "Needs client approval" → it's no longer waiting on the client
+  if (updates.needsClientApproval === false && phase.clientApprovalStatus === "Pending") {
+    updates.clientApprovalStatus = null;
+  }
+
+  // Lead ticked it on a phase the tester already passed → straight to the client
+  if (
+    updates.needsClientApproval === true &&
+    phase.testStatus === "Passed" &&
+    !phase.clientApprovalStatus
+  ) {
+    updates.clientApprovalStatus = "Pending";
   }
 
   await phase.update(updates);
