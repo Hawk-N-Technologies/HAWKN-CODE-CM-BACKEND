@@ -1183,3 +1183,108 @@ describe("Testing module", () => {
     assert.equal((await S.testerA2.request("PUT", `/testing/trainings/${created.body.data.uuid}`, { ...good, projectId: undefined })).status, 404);
   });
 });
+
+describe("SOPs", () => {
+  const good = {
+    title: "How to raise a leave request",
+    department: "HR",
+    effectiveDate: "2026-11-01",
+    content: "<h2>Steps</h2><ol><li>Open My Leave</li><li>Click Apply</li></ol>",
+  };
+
+  before(async () => {
+    S.hr = S.hr || (await helpers.Session.login("hr@gmail.com", "Hr@12345"));
+    const hash = await bcrypt.hash(PASSWORD, 10);
+    await createUser(D.companyA, "bde", "Bee", "Dee", "bde.a@test.com", hash);
+    S.bdeA = await helpers.Session.login("bde.a@test.com", PASSWORD);
+  });
+
+  it("Admin and HR write SOPs; bad input is refused", async () => {
+    assert.equal((await S.hr.request("POST", "/sops", { ...good, title: "" })).status, 400);
+    assert.equal((await S.hr.request("POST", "/sops", { ...good, department: "Space" })).status, 400);
+    assert.equal((await S.hr.request("POST", "/sops", { ...good, content: "<p>  </p>" })).status, 400, "empty procedure");
+
+    const created = await S.hr.request("POST", "/sops", good);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.ok(created.body.data.updatedBy, "shows who last edited it");
+    assert.match(created.body.data.preview, /Steps Open My Leave Click Apply/);
+    D.sop = created.body.data;
+
+    const edited = await S.adminA.request("PUT", `/sops/${D.sop.uuid}`, { ...good, title: "Leave requests" });
+    assert.equal(edited.status, 200);
+    assert.equal(edited.body.data.title, "Leave requests");
+  });
+
+  it("every employee reads SOPs; only Admin / HR can change them; clients see nothing", async () => {
+    for (const session of [S.leadA, S.teamDev ?? S.leadA2, S.testerA, S.bdeA]) {
+      const list = await session.request("GET", "/sops");
+      assert.equal(list.status, 200);
+      assert.ok(list.body.data.some((sop) => sop.uuid === D.sop.uuid));
+      assert.ok(!("content" in list.body.data[0]), "list has no full content");
+
+      const one = await session.request("GET", `/sops/${D.sop.uuid}`);
+      assert.match(one.body.data.content, /Open My Leave/);
+
+      assert.equal((await session.request("PUT", `/sops/${D.sop.uuid}`, good)).status, 403);
+      assert.equal((await session.request("DELETE", `/sops/${D.sop.uuid}`)).status, 403);
+      assert.equal((await session.request("POST", "/sops", good)).status, 403);
+    }
+
+    assert.equal((await S.clientA.request("GET", "/sops")).status, 403);
+    assert.equal((await S.adminB.request("GET", `/sops/${D.sop.uuid}`)).status, 404, "other company");
+    assert.ok(!(await S.adminB.request("GET", "/sops")).body.data.some((sop) => sop.uuid === D.sop.uuid));
+    assert.equal((await S.adminA.request("GET", "/sops/not-a-uuid")).status, 404);
+  });
+
+  it("HR deletes an SOP", async () => {
+    assert.equal((await S.adminB.request("DELETE", `/sops/${D.sop.uuid}`)).status, 404);
+    assert.equal((await S.hr.request("DELETE", `/sops/${D.sop.uuid}`)).status, 200);
+    assert.equal((await S.leadA.request("GET", `/sops/${D.sop.uuid}`)).status, 404);
+  });
+});
+
+describe("BD Dashboard", () => {
+  it("shows leads vs converted, BRDs by status and projects this month — straight from the database", async () => {
+    const res = await S.bdeA.request("GET", "/bd/dashboard");
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const { clients, brds, projects } = res.body.data;
+
+    const db = await one(
+      `SELECT
+         (SELECT count(*)::int FROM clients WHERE company_id = :c AND is_active AND type = 'lead') AS leads,
+         (SELECT count(*)::int FROM clients WHERE company_id = :c AND is_active AND type = 'converted') AS converted,
+         (SELECT count(*)::int FROM brds WHERE company_id = :c) AS brds,
+         (SELECT count(*)::int FROM brds WHERE company_id = :c AND status = 'APPROVED') AS approved,
+         (SELECT count(*)::int FROM projects WHERE company_id = :c
+            AND created_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata') AS this_month`,
+      { c: D.companyA },
+    );
+
+    assert.equal(clients.leads, db.leads);
+    assert.equal(clients.converted, db.converted);
+    assert.equal(clients.conversionRate, Math.round((db.converted / (db.leads + db.converted)) * 100));
+    assert.equal(brds.total, db.brds);
+    assert.equal(brds.byStatus.APPROVED, db.approved);
+    assert.equal(projects.createdThisMonth, db.this_month);
+    assert.ok(projects.createdThisMonth >= 2, "test projects were created this month");
+  });
+
+  it("a new lead shows up straight away; other roles and companies are kept out", async () => {
+    const before = (await S.bdeA.request("GET", "/bd/dashboard")).body.data.clients;
+    const lead = await S.adminA.request("POST", "/clients", {
+      firstName: "Prospect", lastName: "Co", email: "prospect@test.com",
+      password: PASSWORD, confirmPassword: PASSWORD, type: "lead", phone: "9876543211",
+    });
+    assert.equal(lead.status, 201, JSON.stringify(lead.body));
+
+    const after = (await S.bdeA.request("GET", "/bd/dashboard")).body.data;
+    assert.equal(after.clients.leads, before.leads + 1);
+    assert.equal(after.clients.newLeadsThisMonth, before.newLeadsThisMonth + 1);
+    assert.equal(after.recentLeads[0].email, "prospect@test.com");
+
+    assert.equal((await S.testerA.request("GET", "/bd/dashboard")).status, 403);
+    assert.equal((await S.clientA.request("GET", "/bd/dashboard")).status, 403);
+    const other = (await S.adminB.request("GET", "/bd/dashboard")).body.data;
+    assert.ok(!other.recentLeads.some((row) => row.email === "prospect@test.com"));
+  });
+});

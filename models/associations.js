@@ -33,6 +33,7 @@ const ProjectBug = require("./ProjectBug");
 const ProjectDelivery = require("./ProjectDelivery");
 const ProjectBuild = require("./ProjectBuild");
 const FieldTraining = require("./FieldTraining");
+const Sop = require("./Sop");
 const IssueReport = require("./IssueReport");
 
 /*
@@ -829,6 +830,17 @@ ProjectPhase.belongsTo(User, {
   as: "phaseTester",
 });
 
+/*
+|--------------------------------------------------------------------------
+| SOPs
+|--------------------------------------------------------------------------
+*/
+
+Sop.belongsTo(User, {
+  foreignKey: "updatedBy",
+  as: "editor",
+});
+
 module.exports = {
   Company,
   CompanyProfile,
@@ -864,6 +876,7 @@ module.exports = {
   ProjectDelivery,
   ProjectBuild,
   FieldTraining,
+  Sop,
 
   TaskTesting,
   ProjectBug,
